@@ -1,0 +1,34 @@
+```{r}
+library(spatstat.explore)
+library(Seurat)
+library(tricycle)
+library(SingleCellExperiment)
+library(ggplot2)
+library(scattermore)
+library(scater)
+```
+
+## Load in data
+```{r}
+load('data/mouse_msobj_transformed_analysis.rda')
+mouse_data <- as.matrix(msobj@assays[["Spatial"]]@counts) # genes by spots [36601 74096]
+```
+
+## Run Tricycle
+```{r}
+## RUN TRICYCLE ON LOG RAW COUNTS
+sce <- SingleCellExperiment(list(logcounts = log1p(mouse_data)))
+
+# Schwabe cell cycle stage
+sce_stage <- sce
+cc_stage <- estimate_Schwabe_stage(sce_stage,
+                                  gname.type = 'SYMBOL',
+                                  species = 'mouse')
+
+write.csv(cc_stage@colData, 'cellcycleStage.csv')
+
+# Tricycle theta values
+tricycle_sobj <- project_cycle_space(cc_stage, species="mouse", gname.type = c("SYMBOL"))
+tricycle_sobj_cellPos <- estimate_cycle_position(tricycle_sobj)
+saveRDS(tricycle_sobj_cellPos, 'tricycleResults.RDS')
+```

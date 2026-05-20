@@ -1,0 +1,57 @@
+```{r}
+library(spatstat.explore)
+library(Seurat)
+library(tricycle)
+library(SingleCellExperiment)
+library(ggplot2)
+library(scattermore)
+library(scater)
+library(dplyr)
+```
+
+```{r}
+## LOAD ALL
+load('data/mouse_msobj_transformed_analysis.rda')
+meta <- read.csv('data/mouse_CB_meta.csv',row.names=1)
+tricycle_sobj <- readRDS('tricycleResults.RDS')
+write.csv(tricycle_sobj@colData, 'tricyclePosition.csv')
+```
+
+
+### SPATIAL CC STAGE
+```{r}
+## STACKED BARPLOT
+meta_sub <- meta[colnames(tricycle_sobj),]
+meta_sub <- meta_sub[meta_sub$annotations == 'PC' | meta_sub$annotations == 'GC',]
+tricycle_sobj_cellPos_sub <- tricycle_sobj[,rownames(meta_sub)]
+
+tricycle_sobj_cellPos_sub <- tricycle_sobj_cellPos_sub[,!is.na(tricycle_sobj_cellPos_sub@colData$CCStage)]
+meta_sub <- meta[colnames(tricycle_sobj_cellPos_sub),]
+tricycle_sobj_cellPos_sub$annotations = meta_sub$annotations
+tricycle_sobj_cellPos_sub$panels = meta_sub$panels
+
+
+data <- data.frame(tricycle_sobj_cellPos_sub@colData) %>%
+    mutate(Cell_Group = paste0(annotations,'*',panels))
+
+count_data <- data %>%
+  group_by(CCStage, Cell_Group) %>%
+  summarise(count = n()) %>%
+  ungroup()
+
+proportion_data <- count_data %>%
+  group_by(Cell_Group) %>%
+  mutate(proportion = count / sum(count))
+
+pdf(file="plot_stackedBarplot_ccStage_mouse_PCGC_GROUP.pdf",width = 10, height = 10)
+
+ggplot(proportion_data, aes(x = Cell_Group, y = proportion, fill = CCStage)) +
+  geom_bar(stat = "identity") +
+  labs(x = "panel * annotations", y = "Proportion", fill = "Cell Stage") +
+  scale_y_continuous(labels = scales::percent) +  # Format y-axis as percentage
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+dev.off()
+```
+
