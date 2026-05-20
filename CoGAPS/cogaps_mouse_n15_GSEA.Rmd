@@ -17,7 +17,7 @@ library(ggplot2)
 
 ####### LOAD AND PARSE DATA ########
 ```{r}
-NMF <- readRDS('/mnt/morbo/Data/Users/kwoyshner/cerebellum/results/mouse_allGenes_n15/mouse_CB_cogaps_n15_nIterations20k.RDS')
+NMF <- readRDS('mouse_allGenes_n15/mouse_CB_cogaps_n15_nIterations20k.RDS')
 savename <- 'mouse_CB_cogaps_n15_nIterations20k'
 ```
 
