@@ -5,7 +5,7 @@ library(Seurat)
 library(ggplot2)
 
 ## Run for all spots
-load("/mnt/morbo/Data/Users/kwoyshner/cerebellum/data/mouse_msobj_transformed_analysis.rda")
+load("data/mouse_msobj_transformed_analysis.rda")
 spatial_matrix <- as.matrix(msobj@assays[["Spatial"]]@counts) # genes by spots
 spatial_assay <- msobj@assays[['Spatial']] # genes x cells
 
@@ -36,7 +36,7 @@ params <- CogapsParams(
 cogaps.exprs<-log_spatial_matrix
 params <- setDistributedParams(params, nSets=7)
 
-outputDir <- '/mnt/morbo/Data/Users/kwoyshner/cerebellum/results/mouse_allGenes_n15/'
+outputDir <- 'mouse_allGenes_n15/'
 savename <- paste0('mouse_CB_cogaps_n',nPatterns,'_nIterations',nIterations/1000,'k')
 
 
