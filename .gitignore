@@ -1,0 +1,25 @@
+# Data is not distributed in this repository (see Data availability in the README)
+data/
+derived/
+*.csv
+*.tsv
+*.xlsx
+*.xls
+*.rda
+*.rds
+*.h5ad
+*.loom
+
+# Rendered figure image exports (the .html outputs already embed the figures)
+*.pdf
+*.png
+*.tif
+*.tiff
+
+# Caches / OS cruft
+.DS_Store
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.Rhistory
+.RData

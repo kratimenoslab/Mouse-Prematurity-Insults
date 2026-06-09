@@ -1,0 +1,125 @@
+---
+title: "Figure Fig2I — Human GCP count per HPF (EGL) (Term vs Preterm), n = 4 per group"
+subtitle: "Mann–Whitney U (two-tailed); style matches Fig 2 B–F"
+author: "Kratimenos Lab"
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: cosmo
+    code_folding: hide
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE,
+                      fig.width = 2.6, fig.height = 4.4, dpi = 300)
+library(readr); library(dplyr); library(ggplot2); library(knitr); library(kableExtra)
+```
+
+# Overview
+
+Panel **Fig2I** (Human GCP count per HPF (EGL) (Term vs Preterm)) — n = 4 per group, matched on GA from the larger
+Prism cohort. Values were recovered from the original published Prism panel
+(per-subject points) so this Rmd exactly reproduces the published bars, error
+bars and significance call without going through Prism.
+
+Statistical test: **two-tailed Mann–Whitney U** (as in the source n = 4
+analysis). Visual style aligned with Fig 2 B–F.
+
+# Data
+
+```{r load}
+group_levels <- c("Term", "Preterm")
+dat <- read_csv("data/Fig2I_n4_data.csv", show_col_types = FALSE) |>
+  mutate(Group = factor(Group, levels = group_levels))
+
+dat |> group_by(Group) |>
+  summarise(n = n(), mean = mean(Value), sd = sd(Value),
+            median = median(Value), min = min(Value), max = max(Value),
+            .groups = "drop") |>
+  kable(digits = 3, caption = "Per-group summary") |>
+  kable_styling(full_width = FALSE)
+```
+
+# Statistical test
+
+```{r test}
+mw <- wilcox.test(Value ~ Group, data = dat, exact = FALSE, correct = FALSE)
+p_value <- mw$p.value
+broom::tidy(mw) |>
+  kable(digits = 4, caption = "Mann–Whitney U (two-tailed)") |>
+  kable_styling(full_width = FALSE)
+```
+
+# Figure
+
+```{r plot, fig.width=2.6, fig.height=4.4}
+fill_cols <- c("Term" = "#F1E3CA", "Preterm" = "#8FA3BC")
+
+summ <- dat |> group_by(Group) |>
+  summarise(mean = mean(Value), sd = sd(Value),
+            top  = max(Value) + sd(Value), .groups = "drop")
+
+sig_lab <- dplyr::case_when(
+  p_value < 0.0001 ~ "****",
+  p_value < 0.001  ~ "***",
+  p_value < 0.01   ~ "**",
+  p_value < 0.05   ~ "*",
+  TRUE             ~ "ns")
+
+span <- 100; step <- span * 0.065
+base <- max(summ$top) + step * 0.7
+y_top <- 100
+if (sig_lab != "ns") y_top <- max(y_top, base + step)
+
+set.seed(7)
+p <- ggplot(summ, aes(Group, mean)) +
+  geom_col(aes(fill = Group), width = 0.62, colour = "black", linewidth = 0.35) +
+  geom_errorbar(aes(ymin = mean - sd, ymax = mean + sd),
+                width = 0.22, linewidth = 0.35) +
+  geom_point(data = dat, aes(Group, Value, fill = Group),
+             position = position_jitter(width = 0.12, seed = 7),
+             size = 1.6, shape = 21, colour = "black", stroke = 0.3,
+             show.legend = FALSE) +
+  scale_fill_manual(values = fill_cols) +
+  scale_y_continuous(limits = c(0, y_top),
+                     breaks = seq(0, 100, 25), expand = c(0, 0)) +
+  labs(title = NULL, x = NULL, y = "GCP count per HPF (EGL)") +
+  theme_classic(base_size = 12, base_family = "Arial") +
+  theme(legend.position  = "none",
+        plot.title       = element_text(hjust = 0.5),
+        axis.text.x      = element_text(angle = 90, hjust = 1, vjust = 0.5),
+        plot.background  = element_rect(fill = "white", color = NA),
+        panel.background = element_rect(fill = "white", color = NA))
+
+if (sig_lab != "ns") {
+  yy <- base
+  p <- p +
+    annotate("segment", x = 1, xend = 2, y = yy, yend = yy, linewidth = 0.3) +
+    annotate("segment", x = 1, xend = 1, y = yy, yend = yy - step * 0.18, linewidth = 0.3) +
+    annotate("segment", x = 2, xend = 2, y = yy, yend = yy - step * 0.18, linewidth = 0.3) +
+    annotate("text", x = 1.5, y = yy + step * 0.05, label = sig_lab,
+             vjust = 0, fontface = "bold", size = 4.4)
+}
+p
+
+ggsave("Fig2I.pdf", p, width = 2.6, height = 4.4, device = cairo_pdf)
+ggsave("Fig2I.png", p, width = 2.6, height = 4.4, dpi = 300, bg = "white")
+```
+
+# Verification vs source (n = 4 cohort)
+
+| Statistic | Source | This analysis |
+|---|---|---|
+| Term n / mean / SD | 4 / 31.75 / 8.261 | `r dat |> filter(Group=="Term") |> nrow()` / `r round(mean(dat$Value[dat$Group=="Term"]), 3)` / `r round(sd(dat$Value[dat$Group=="Term"]), 3)` |
+| Preterm n / mean / SD | 4 / 76.75 / 4.272 | `r dat |> filter(Group=="Preterm") |> nrow()` / `r round(mean(dat$Value[dat$Group=="Preterm"]), 3)` / `r round(sd(dat$Value[dat$Group=="Preterm"]), 3)` |
+| Test | Mann–Whitney U (two-tailed) | p = `r format(p_value, digits = 3)` (`r sig_lab`) |
+
+# Session info
+
+```{r session, echo=FALSE}
+sessionInfo()
+```
+

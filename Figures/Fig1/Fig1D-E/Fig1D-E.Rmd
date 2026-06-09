@@ -1,0 +1,301 @@
+---
+title: "Figure 1D-E — ErasmusLadder behavioral analysis"
+author: "Kratimenos Lab"
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: cosmo
+    code_folding: hide
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, warning = FALSE, message = FALSE,
+  fig.width = 8, fig.height = 5, dpi = 150
+)
+```
+
+# Overview
+
+Figure 1D plots **post-perturbation step-time** (ms) across eight ErasmusLadder sessions for four experimental groups: Sal-N, Sal-Hx, LPS-N, LPS-Hx. Sessions 1–4 are training (no obstacle); sessions 5–8 are obstacle/challenge sessions.
+
+Figure 1E plots **percent missteps** across the same eight sessions for the same four groups.
+
+Per-mouse, per-session values are read from the consolidated dataset `Fig1_data.xlsx` (sheets: `steptimes_raw`, `steptimes_summary`, `missteps_raw`, `missteps_summary`).
+
+Cohort: noPT+noEE subset. n: Sal-N = 10, Sal-Hx = 6, LPS-N = 6, LPS-Hx = 6.
+
+```{r packages}
+library(tidyverse)
+library(readxl)
+library(ggtext)
+library(lme4)
+library(lmerTest)
+library(emmeans)
+library(knitr)
+
+DATA_FILE <- "data/Fig1_data.xlsx"
+
+group_levels <- c("Sal-N", "Sal-Hx", "LPS-N", "LPS-Hx")
+group_colors <- c(
+  "Sal-N"  = "#308C59",
+  "Sal-Hx" = "#4A6DE1",
+  "LPS-N"  = "#FA9009",
+  "LPS-Hx" = "#DA1C40"
+)
+
+theme_fig1 <- theme_classic(base_size = 11, base_family = "Arial") +
+  theme(
+    panel.grid.major = element_line(color = "grey92", linewidth = 0.3),
+    legend.title = element_blank(),
+    legend.key.size = unit(0.4, "cm"),
+    legend.text = element_text(size = 9),
+    legend.background = element_rect(fill = "white", color = "black", linewidth = 0.3),
+    legend.position = c(0.99, 0.99),
+    legend.justification = c(1, 1),
+    axis.title = element_text(size = 11),
+    axis.text = element_text(size = 10)
+  )
+```
+
+```{r load}
+load_raw <- function(sheet, value_name) {
+  read_excel(DATA_FILE, sheet = sheet) |>
+    pivot_longer(starts_with("Session"),
+                 names_to = "Session", values_to = value_name,
+                 names_prefix = "Session") |>
+    mutate(Session = as.integer(Session),
+           Group = factor(Condition, levels = group_levels)) |>
+    select(Group, Subject, Session, !!sym(value_name))
+}
+
+fig1d_raw <- load_raw("steptimes_raw", "PostPert_ms")
+fig1e_raw <- load_raw("missteps_raw",  "Misstep_pct")
+
+load_summary <- function(sheet) {
+  read_excel(DATA_FILE, sheet = sheet) |>
+    mutate(Group = factor(Condition, levels = group_levels),
+           Phase = if_else(Session <= 4, "Training", "Obstacle"))
+}
+sumD <- load_summary("steptimes_summary")
+sumE <- load_summary("missteps_summary")
+```
+
+# Statistics
+
+Two-way repeated-measures ANOVA with Tukey's multiple comparisons, fit as a linear mixed-effects model (`lmer(y ~ Group * Session + (1|MouseID))`) so post-hoc contrasts use the pooled within-subject error term. Type-III ANOVA with Satterthwaite df; pairwise contrasts use Kenward–Roger df with Tukey adjustment.
+
+```{r stats-fig1d}
+fig1d_for_lmer <- fig1d_raw |>
+  mutate(Session = factor(Session), MouseID = paste(Group, Subject, sep = "_"))
+
+fit1d <- lmer(PostPert_ms ~ Group * Session + (1 | MouseID),
+              data = fig1d_for_lmer, REML = TRUE)
+anova(fit1d) |> as.data.frame() |>
+  rownames_to_column("Effect") |>
+  kable(caption = "Fig 1D — Type-III ANOVA", digits = 4)
+
+emm1d  <- emmeans(fit1d, ~ Group | Session, lmer.df = "kenward-roger")
+pwc1d  <- pairs(emm1d, adjust = "tukey") |> as.data.frame()
+pwc1d_s5 <- pwc1d |> filter(Session == "5") |> arrange(p.value)
+pwc1d_s5 |>
+  select(contrast, estimate, SE, df, t.ratio, p.value) |>
+  kable(caption = "Fig 1D — Tukey pairwise (Group | Session = 5)", digits = 4)
+```
+
+```{r stats-fig1e}
+fig1e_for_lmer <- fig1e_raw |>
+  mutate(Session = factor(Session), MouseID = paste(Group, Subject, sep = "_"))
+
+fit1e <- lmer(Misstep_pct ~ Group * Session + (1 | MouseID),
+              data = fig1e_for_lmer, REML = TRUE)
+anova(fit1e) |> as.data.frame() |>
+  rownames_to_column("Effect") |>
+  kable(caption = "Fig 1E — Type-III ANOVA", digits = 4)
+
+emm1e  <- emmeans(fit1e, ~ Group | Session, lmer.df = "kenward-roger")
+pwc1e  <- pairs(emm1e, adjust = "tukey") |> as.data.frame()
+pwc1e_s5 <- pwc1e |> filter(Session == "5") |> arrange(p.value)
+pwc1e_s5 |>
+  select(contrast, estimate, SE, df, t.ratio, p.value) |>
+  kable(caption = "Fig 1E — Tukey pairwise (Group | Session = 5)", digits = 4)
+```
+
+```{r helpers}
+sig_stars <- function(p) {
+  case_when(
+    p < 0.0001 ~ "****",
+    p < 0.001  ~ "***",
+    p < 0.01   ~ "**",
+    p < 0.05   ~ "*",
+    TRUE       ~ "ns"
+  )
+}
+
+sig_caption <- function(pwc_session) {
+  sig <- pwc_session |>
+    filter(p.value < 0.05) |>
+    arrange(p.value)
+  if (nrow(sig) == 0) {
+    return("<span style='color:#666666;font-style:italic'>Tukey HSD &middot; session 5</span><br><span style='color:#888888'>No significant pairwise comparisons.</span>")
+  }
+  # Use the HTML entity &#42; for the asterisk so Markdown doesn't interpret it
+  asterisks_html <- function(p) strrep("&#42;",
+                                       nchar(sig_stars(p)))
+  parts <- vapply(seq_len(nrow(sig)), function(i) {
+    sprintf("<span style='color:#1a1a1a;font-weight:700'>%s</span>&nbsp;<span style='color:#444444'>%s</span>",
+            asterisks_html(sig$p.value[i]),
+            gsub(" - ", " <span style='font-style:italic;color:#777'>vs</span> ",
+                 gsub("[()]", "", as.character(sig$contrast[i]))))
+  }, character(1))
+  paste0(
+    "<span style='color:#555555;font-style:italic;letter-spacing:0.5px'>Tukey HSD &middot; session 5</span><br>",
+    paste(parts, collapse = " <span style='color:#bbbbbb'>&nbsp;&#9474;&nbsp;</span> ")
+  )
+}
+
+# Dot-to-dot significance brackets, drawn on the LEFT side of session 5.
+# Each bracket spans the y-range between the two compared group means.
+# Short horizontal caps point right toward the data; the rotated asterisks
+# sit just to the LEFT of each vertical bar. Most-significant bracket is
+# closest to the data (innermost); least-significant is furthest left.
+dot_to_dot_brackets <- function(sumdf, pwc_session, x_data = 5,
+                                first_offset = -0.14, step = -0.26) {
+  sig <- pwc_session |>
+    filter(p.value < 0.05) |>
+    arrange(p.value)            # most significant first → innermost
+  if (nrow(sig) == 0) return(list())
+
+  s5_means <- sumdf |> filter(Session == x_data) |>
+    select(Group, Mean) |> deframe()
+
+  layers <- list()
+  for (i in seq_len(nrow(sig))) {
+    contrast_str <- gsub("[()]", "", as.character(sig$contrast[i]))
+    grp <- strsplit(contrast_str, " - ")[[1]]
+    y1 <- s5_means[[grp[1]]]; y2 <- s5_means[[grp[2]]]
+    y_bot <- min(y1, y2); y_top <- max(y1, y2)
+    x_b <- x_data + first_offset + (i - 1) * step  # negative offset → bracket sits on left
+
+    cap_w <- 0.06   # short horizontal tick at each end (does NOT reach the dots)
+    layers <- c(layers, list(
+      # Vertical bar
+      annotate("segment", x = x_b, xend = x_b,
+               y = y_bot, yend = y_top,
+               linewidth = 0.5, color = "black"),
+      # Bottom tick (short cap pointing toward dots)
+      annotate("segment", x = x_b, xend = x_b + cap_w,
+               y = y_bot, yend = y_bot,
+               linewidth = 0.5, color = "black"),
+      # Top tick
+      annotate("segment", x = x_b, xend = x_b + cap_w,
+               y = y_top, yend = y_top,
+               linewidth = 0.5, color = "black"),
+      # Asterisks to the LEFT of the bracket, rotated 90° (vertical text)
+      annotate("text", x = x_b - 0.04, y = (y_bot + y_top) / 2,
+               label = sig_stars(sig$p.value[i]),
+               size = 5, hjust = 0.5, vjust = 0.5,
+               angle = 90, fontface = "bold")
+    ))
+  }
+  layers
+}
+
+sig_table <- function(pwc_session, panel_label) {
+  pwc_session |>
+    filter(p.value < 0.05) |>
+    arrange(p.value) |>
+    mutate(Significance = sig_stars(p.value),
+           Comparison = gsub(" - ", " vs ",
+                             gsub("[()]", "", as.character(contrast))),
+           `P (Tukey)` = signif(p.value, 3)) |>
+    select(Comparison, Significance, `P (Tukey)`) |>
+    kable(caption = paste0(panel_label,
+            " — significant pairwise comparisons at session 5 (Tukey-adjusted)"))
+}
+
+# Plot helper. Lines break between Training (1–4) and Obstacle (5–8) using
+# `aes(group = interaction(Group, Phase))`; the x-axis itself stays continuous.
+# The significant comparisons are added as a single-line caption below the plot.
+base_panel <- function(sumdf, ylab, ymax, ybreaks, pwc_session, caption_text) {
+  ggplot(sumdf, aes(x = Session, y = Mean, color = Group)) +
+    geom_errorbar(aes(ymin = Mean - SEM, ymax = Mean + SEM),
+                  width = 0.18, linewidth = 0.55) +
+    geom_line(aes(group = interaction(Group, Phase)),
+              linetype = "11", linewidth = 0.85) +
+    geom_point(size = 2.8, shape = 16) +
+    dot_to_dot_brackets(sumdf, pwc_session, x_data = 5) +
+    annotate("text", x = 2.5, y = ymax * 0.99,
+             label = "Training Sessions", size = 3.6, color = "grey25") +
+    annotate("text", x = 6.5, y = ymax * 0.99,
+             label = "Obstacle Sessions", size = 3.6, color = "grey25") +
+    scale_color_manual(values = group_colors) +
+    scale_x_continuous(breaks = 1:8, expand = expansion(mult = 0.02)) +
+    scale_y_continuous(limits = c(0, ymax), breaks = ybreaks,
+                       expand = expansion(mult = c(0, 0.02))) +
+    labs(x = "Sessions", y = ylab, caption = caption_text) +
+    theme_fig1 +
+    theme(plot.caption = element_markdown(hjust = 0.5, size = 9.5,
+                                          color = "grey20",
+                                          lineheight = 1.4,
+                                          margin = margin(t = 12)))
+}
+```
+
+# Figure 1D — Post-perturbation step-time
+
+```{r fig1d, fig.width=8, fig.height=5.2}
+# In-figure Tukey caption suppressed (caption_text = NULL) to match the
+# published Figure 1 layout. The post-hoc comparisons are still reported in
+# the kable table below the chart for the HTML report.
+p1d <- base_panel(sumD, "Post-perturbation step-time (ms)", 1000,
+                  seq(0, 1000, 200),
+                  pwc_session = pwc1d_s5,
+                  caption_text = NULL)
+p1d
+ggsave("Fig1D.pdf", p1d, width = 8, height = 5.2,
+       device = cairo_pdf)
+ggsave("Fig1D.png", p1d, width = 8, height = 5.2, dpi = 300, bg = "white")
+```
+
+```{r fig1d-sig, results='asis'}
+sig_table(pwc1d_s5, "Fig 1D")
+```
+
+# Figure 1E — % Misstep
+
+```{r fig1e, fig.width=8, fig.height=5.2}
+# In-figure Tukey caption suppressed; see fig1d chunk above for rationale.
+p1e <- base_panel(sumE, "%Misstep", 25, seq(0, 25, 5),
+                  pwc_session = pwc1e_s5,
+                  caption_text = NULL)
+p1e
+ggsave("Fig1E.pdf", p1e, width = 8, height = 5.2,
+       device = cairo_pdf)
+ggsave("Fig1E.png", p1e, width = 8, height = 5.2, dpi = 300, bg = "white")
+```
+
+```{r fig1e-sig, results='asis'}
+sig_table(pwc1e_s5, "Fig 1E")
+```
+
+# Per-group summary tables
+
+```{r summary-tables}
+sumD |>
+  select(Group, Session, Mean, SEM, N) |>
+  kable(caption = "Fig 1D — group means ± SEM by session", digits = 2)
+
+sumE |>
+  select(Group, Session, Mean, SEM, N) |>
+  kable(caption = "Fig 1E — group means ± SEM by session", digits = 2)
+```
+
+# Session info
+
+```{r}
+sessionInfo()
+```

@@ -1,0 +1,189 @@
+---
+title: "Figure 4C — Seahorse XF OCR Trace (P45: Sal-N vs LPS-Hx)"
+author: "Kratimenos Lab"
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: cosmo
+    code_folding: hide
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE, warning = FALSE, message = FALSE,
+  fig.width = 6.4, fig.height = 4.8, dpi = 150
+)
+```
+
+# Overview
+
+Panel C compares the **mean oxygen consumption rate (OCR) trace** for the **P45 Sal-N (control)** and **P45 LPS-Hx** groups across the Seahorse XF Mito Stress Test injection sequence.
+
+**Data source.** Per-mouse time-course OCR values are read from `Fig4ABC_data.xlsx` (sheet `fig4c_trace_per_mouse` and `fig4c_trace_group_mean`), at n = 6 mice per group (P30-Nx 1–6 for Sal-N, P30-DH 1–6 for LPS-Hx). Per-mouse means are averaged across the n = 6 animals in each group to give the group mean trace; whiskers are SEM (n = 6). The upstream provenance (raw `.asyr` plate files and the Wave Mito Stress Test summary exports) is archived under `backup/seahorse/`.
+
+```{r packages}
+library(tidyverse)
+library(ggtext)
+library(knitr)
+
+theme_panel <- theme_classic(base_size = 13, base_family = "Arial") +
+  theme(
+    panel.grid         = element_blank(),
+    legend.position    = "none",
+    axis.title.y       = element_text(size = 13, margin = margin(r = 5)),
+    axis.title.x       = element_text(size = 13, margin = margin(t = 5)),
+    axis.text          = element_text(size = 12, color = "black"),
+    axis.line          = element_line(linewidth = 0.5),
+    axis.ticks         = element_line(linewidth = 0.5),
+    plot.title         = element_textbox_simple(
+                            size = 13, hjust = 0.5, halign = 0.5,
+                            face = "bold",
+                            fill = "#E8E5EE", color = "grey15",
+                            box.color = NA,
+                            padding = margin(4, 8, 4, 8),
+                            margin  = margin(0, 0, 8, 0),
+                            r = unit(2, "pt"),
+                            width = grid::unit(0.55, "npc")),
+    plot.margin        = margin(6, 10, 6, 6)
+  )
+```
+
+# Load time-course data
+
+```{r load}
+trace <- readxl::read_excel("data/Fig4ABC_data.xlsx", sheet = "fig4c_trace_group_mean") |>
+  mutate(Group = factor(Group, levels = c("Sal-N", "LPS-Hx")))
+
+kable(trace |> group_by(Group) |>
+        summarise(n_timepoints = n(),
+                  OCR_min      = round(min(OCR), 1),
+                  OCR_max      = round(max(OCR), 1),
+                  OCR_baseline = round(mean(OCR[time_min < 50]), 1)),
+      caption = "Per-group trace summary (group mean ± SEM, n = 6 each)")
+```
+
+# Phase boundaries
+
+Injection times derived from the change-points in the trace:
+
+| Injection | Approx. time (min) | What it does |
+|---|---|---|
+| **Oligomycin** | ~52 | Inhibits ATP synthase. OCR remaining = proton leak + non-mitochondrial. |
+| **FCCP** | ~211 | Uncouples the inner mitochondrial membrane → maximal electron-transport rate. |
+| **Antimycin A / Rotenone (A/R)** | ~298 | Blocks Complex III & Complex I → only non-mitochondrial OCR remains. |
+
+```{r injection-times}
+# `hjust = -0.05` puts the label to the right of the vertical line; `hjust = 1.05`
+# puts it to the left. A/R sits at the rightmost line, so it gets a right-aligned
+# label so the text doesn't get clipped against the plot edge.
+injections <- tibble(
+  x     = c(56.4, 211.4, 297.9),   # midpoints between adjacent measurements
+  label = c("Oligomycin", "FCCP", "A/R"),
+  hjust = c(-0.05, -0.05, 1.05)
+)
+```
+
+# Figure 4C — overlay
+
+Sal-N and LPS-Hx group-mean traces overlaid. Light-blue calibration band at the start, green vertical injection markers, "Proton leak" bracket over the post-oligomycin window. Legend at top-right.
+
+```{r fig4c, fig.width=6.8, fig.height=5.0, fig.cap="Figure 4C. Seahorse XF OCR traces for P45 Sal-N (control, blue) and P45 LPS-Hx (red, n = 6 mice each) — group mean ± SEM at each measurement time-point. Light-blue band: calibration. Green vertical lines: injections (Oligomycin, FCCP, A/R). The bracketed region marks the proton-leak phase quantified in Panel B."}
+
+group_color <- c("Sal-N" = "#3C82C7", "LPS-Hx" = "#C73C50")
+group_fill_dot <- c("Sal-N" = "#3C82C7", "LPS-Hx" = "#C73C50")
+
+x_max  <- max(trace$time_min) + 5
+y_max  <- max(trace$OCR + trace$SEM, na.rm = TRUE) * 1.15
+
+# Proton-leak bracket — span the slow-decline post-oligomycin window
+proton_y_top <- 32
+proton_y_bot <- 6
+
+p4c <- ggplot(trace, aes(x = time_min, y = OCR, color = Group, fill = Group)) +
+  annotate("rect", xmin = -2, xmax = 5, ymin = 0, ymax = y_max,
+           fill = "#9EC9E9", alpha = 0.55, color = NA) +
+  geom_vline(data = injections, aes(xintercept = x),
+             linetype = "solid", linewidth = 0.5,
+             color = "#7AA56C", inherit.aes = FALSE) +
+  geom_text(data = injections,
+            aes(x = x, y = y_max * 0.97, label = label, hjust = hjust),
+            inherit.aes = FALSE,
+            size = 4.8, fontface = "bold",
+            vjust = 1, color = "#3F6E2F") +
+  geom_errorbar(aes(ymin = OCR - SEM, ymax = OCR + SEM),
+                width = 3, linewidth = 0.45) +
+  geom_line(linewidth = 1.1) +
+  geom_point(shape = 21, color = "grey15", size = 1.7, stroke = 0.4) +
+  annotate("rect", xmin = 58, xmax = 208,
+           ymin = proton_y_bot, ymax = proton_y_top,
+           fill = "white", color = "grey30", linewidth = 0.4) +
+  annotate("text", x = (58 + 208)/2, y = (proton_y_bot + proton_y_top)/2,
+           label = "Proton leak",
+           size = 4.8, fontface = "bold", color = "grey15") +
+  scale_color_manual(values = group_color, name = NULL) +
+  scale_fill_manual (values = group_fill_dot, name = NULL) +
+  scale_x_continuous(limits = c(-5, x_max),
+                     breaks = seq(0, x_max, 50),
+                     expand = expansion(mult = c(0, 0.02))) +
+  scale_y_continuous(limits = c(0, y_max),
+                     expand = expansion(mult = c(0, 0))) +
+  labs(x = "Time (min)",
+       y = expression("Mitochondrial Respiration OCR (pmol O"[2]*"/min)"),
+       title = "P45 — Sal-N vs LPS-Hx") +
+  theme_panel +
+  theme(
+    legend.position    = c(0.95, 0.97),
+    legend.justification = c(1, 1),
+    legend.background  = element_rect(fill = "white", color = "grey60",
+                                      linewidth = 0.3),
+    legend.key.size    = unit(0.5, "cm"),
+    legend.text        = element_text(size = 12),
+    legend.margin      = margin(2, 4, 2, 4)
+  )
+
+p4c
+ggsave("Fig4C.pdf", plot = p4c, width = 6.8, height = 5.0,
+       device = cairo_pdf)
+ggsave("Fig4C.png", plot = p4c, width = 6.8, height = 5.0, dpi = 300, bg = "white")
+```
+
+# Per-phase summary (validation)
+
+```{r phase-summary}
+trace |>
+  mutate(phase = case_when(
+    time_min <  56.4 ~ "1. Basal",
+    time_min < 211.4 ~ "2. Post-Oligomycin (proton leak)",
+    time_min < 297.9 ~ "3. Post-FCCP (max respiration)",
+    TRUE             ~ "4. Post-A/R (non-mitochondrial)"
+  )) |>
+  group_by(Group, phase) |>
+  summarise(
+    n_timepoints = n(),
+    OCR_mean = round(mean(OCR), 1),
+    OCR_min  = round(min(OCR),  1),
+    OCR_max  = round(max(OCR),  1),
+    .groups = "drop"
+  ) |>
+  arrange(phase, Group) |>
+  kable(caption = "Per-phase OCR summary by group")
+```
+
+# Notes
+
+- **Qualitative panel** — no group statistics. Panels A and B carry the proton-leak quantification (one-way ANOVA + Tukey HSD).
+- **Phase definitions** (computed downstream by Wave's Mito Stress Test report):
+  - **Basal respiration** = OCR(baseline) − OCR(A/R)
+  - **ATP-linked respiration** = OCR(baseline) − OCR(post-Oligomycin)
+  - **Proton leak** = OCR(post-Oligomycin) − OCR(post-A/R) (this is what is plotted in Fig 4A and 4B)
+  - **Maximal respiration** = OCR(post-FCCP) − OCR(post-A/R)
+  - **Spare respiratory capacity (SRC)** = OCR(post-FCCP) − OCR(baseline)
+
+# Session info
+
+```{r session}
+sessionInfo()
+```

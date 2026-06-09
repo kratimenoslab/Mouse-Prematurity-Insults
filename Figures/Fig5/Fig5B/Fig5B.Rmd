@@ -1,0 +1,126 @@
+---
+title: "Figure 5B — Schwabe cell-cycle stage proportions (GC* / PC* x treatment)"
+author: "Kratimenos Lab (original script: Kyla Woyshner)"
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+output:
+  html_document:
+    theme: cosmo
+    toc: true
+    toc_float: true
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,
+                      fig.width = 8, fig.height = 5, dpi = 96)
+suppressPackageStartupMessages({
+  library(dplyr); library(ggplot2); library(readr); library(tidyr); library(knitr)
+})
+```
+
+# Overview
+
+**Figure 5B** — Per-spot Schwabe cell-cycle stage proportions, faceted by cell
+type (GCs / PCs) and broken down by treatment group (Sal-N / Sal-Hx / LPS-N /
+LPS-Hx). Spots with no Schwabe call are dropped. Logic preserved verbatim from
+Kyla's original `plot_tricycle_mouse_SchwabeBarplot.Rmd`.
+
+Inputs (in `data/`):
+
+- `cellcycleStage.csv` — per-spot Schwabe stage call
+- `mouse_CB_meta.csv` — per-spot Seurat metadata (annotations, panels)
+
+# Load
+
+```{r load}
+ccstage <- read_csv("data/cellcycleStage.csv", show_col_types = FALSE) |>
+  rename(spot = 1)
+meta    <- read_csv("data/mouse_CB_meta.csv", show_col_types = FALSE) |>
+  rename(spot = 1)
+
+d <- meta |>
+  select(spot, annotations, panels) |>
+  inner_join(ccstage, by = "spot") |>
+  filter(annotations %in% c("PC", "GC"), !is.na(CCStage))
+
+panel_to_label <- c(C = "Sal-N", MH = "Sal-Hx", L = "LPS-N", DH = "LPS-Hx")
+d <- d |>
+  mutate(panels_label = factor(panel_to_label[panels],
+                               levels = c("Sal-N", "Sal-Hx", "LPS-N", "LPS-Hx")),
+         Cell_Group   = paste0(annotations, "*", as.character(panels_label)))
+
+d |> count(annotations, panels_label) |>
+  pivot_wider(names_from = panels_label, values_from = n, values_fill = 0) |>
+  kable(caption = "PC/GC x treatment spot counts (Schwabe-called spots only).")
+```
+
+# Proportion table
+
+```{r proportions}
+d |>
+  count(Cell_Group, CCStage, name = "count") |>
+  group_by(Cell_Group) |>
+  mutate(proportion = round(count / sum(count), 3)) |>
+  ungroup() |>
+  arrange(Cell_Group, CCStage) |>
+  kable(caption = "Per Cell_Group: count and proportion in each Schwabe CCStage.")
+```
+
+# Figure 5B
+
+```{r plot, fig.width=8, fig.height=5}
+treatment_order <- c("Sal-N", "LPS-Hx", "LPS-N", "Sal-Hx")
+stage_colors <- c(
+  "G1.S" = "#F4A6B0",
+  "S"    = "#F1C871",
+  "G2"   = "#7FB57F",
+  "G2.M" = "#2F4F8F",
+  "M.G1" = "#C46BCC"
+)
+
+prop <- d |>
+  count(annotations, panels_label, CCStage, name = "count") |>
+  group_by(annotations, panels_label) |>
+  mutate(proportion = count / sum(count)) |>
+  ungroup() |>
+  mutate(panels_label = factor(panels_label, levels = treatment_order),
+         cell_facet   = factor(ifelse(annotations == "GC", "GCs", "PCs"),
+                               levels = c("GCs", "PCs")),
+         CCStage      = factor(CCStage, levels = c("G1.S", "S", "G2", "G2.M", "M.G1")))
+
+p <- ggplot(prop, aes(x = panels_label, y = proportion, fill = CCStage)) +
+  geom_bar(stat = "identity", width = 0.85, color = "white", linewidth = 0.3) +
+  facet_wrap(~ cell_facet, nrow = 1, strip.position = "top") +
+  scale_y_continuous(labels = scales::percent_format(accuracy = 1),
+                     expand = expansion(mult = c(0, 0.04))) +
+  scale_fill_manual(values = stage_colors, name = "Cell Stage") +
+  labs(x = NULL, y = "Proportion") +
+  theme_classic(base_size = 11, base_family = "Arial") +
+  theme(
+    panel.grid       = element_blank(),
+    axis.title.y     = element_text(angle = 90, vjust = 0.5, margin = margin(r = 6)),
+    axis.text.x      = element_text(angle = 90, hjust = 1, vjust = 0.5, color = "black"),
+    axis.text.y      = element_text(color = "black"),
+    axis.line        = element_line(linewidth = 0.5),
+    strip.background = element_rect(fill = "#E8E5EE", color = NA),
+    strip.text       = element_text(size = 11, color = "grey15",
+                                    margin = margin(t = 4, b = 4)),
+    strip.placement  = "outside",
+    panel.spacing.x  = unit(0.6, "lines"),
+    legend.position  = "right",
+    legend.title     = element_text(size = 10),
+    legend.key.size  = unit(0.45, "cm"),
+    plot.margin      = margin(8, 8, 8, 8)
+  )
+p
+
+ggsave("Fig5B.pdf", p, width = 7, height = 4.5,
+       device = cairo_pdf)
+ggsave("Fig5B.png", p, width = 7, height = 4.5, dpi = 300, bg = "white")
+```
+
+# Session info
+
+```{r session}
+sessionInfo()
+```

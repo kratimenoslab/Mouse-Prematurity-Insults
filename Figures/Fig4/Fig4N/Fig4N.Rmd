@@ -1,0 +1,179 @@
+---
+title: "Figure 4N — Mitochondrial Health Pie Charts (Granule Cells)"
+author: "Kratimenos Lab"
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: cosmo
+    code_folding: hide
+    df_print: paged
+params:
+  plot_order: !r c(3, 4, 5, 1, 2)
+  start_deg: 0
+  direction: 1
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,
+                      fig.align = "center")
+suppressPackageStartupMessages({
+  library(readr); library(dplyr); library(tidyr); library(ggplot2)
+  library(patchwork); library(cowplot); library(grid); library(knitr)
+})
+
+CELL <- "GCs"   # "GCs" or "PCs"
+DATA_FILE <- "data/Fig4NO_counts.csv"
+```
+
+# Overview
+
+**Figure 4N** — mitochondrial-health distribution in granule cells
+across 4 experimental groups (Sal-N, Sal-Hx, LPS-N, LPS-Hx) x 2 ages
+(P11, P45), scored into 5 EM-morphology categories.
+
+| Code | Category                                            | Colour      |
+|------|-----------------------------------------------------|-------------|
+| 1    | Healthy matrix, aligned cristae                     | medium blue |
+| 2    | Healthy matrix, disorganized cristae                | light blue  |
+| 3    | Poor matrix, disorganized cristae                   | pale yellow |
+| 4    | Small vacuoles                                      | orange      |
+| 5    | Mitophagy, minimal cristae, large vacuoles          | red         |
+
+# Load data
+
+```{r load}
+counts_wide <- read_csv(DATA_FILE, show_col_types = FALSE)
+dat <- counts_wide |>
+  filter(cell_type == CELL) |>
+  pivot_longer(cols = starts_with("cat"),
+               names_to = "category", values_to = "count") |>
+  mutate(category = sub("^cat", "", category)) |>
+  mutate(
+    condition = factor(condition, levels = c("Sal-N","Sal-Hx","LPS-N","LPS-Hx")),
+    age       = factor(age,       levels = c("P11", "P45")),
+    # factor-level order = plot order around the pie (CW from start)
+    category  = factor(category,  levels = as.character(params$plot_order))
+  ) |>
+  arrange(condition, age, category)
+
+dat |>
+  mutate(category = paste0("cat", as.character(category))) |>
+  pivot_wider(names_from = category, values_from = count) |>
+  kable(caption = sprintf("Per-condition mitochondrial-health counts (%s)", CELL))
+```
+
+# Plot
+
+```{r palette}
+# Office / PowerPoint default chart palette — matches the published figure.
+cat_colors <- c(
+  "1" = "#4472C4",   # medium blue
+  "2" = "#B4C7E7",   # light blue
+  "3" = "#FFF2CC",   # pale yellow
+  "4" = "#ED7D31",   # orange
+  "5" = "#C00000"    # brick red
+)
+start_rad <- params$start_deg * pi / 180
+pie_dir   <- params$direction
+```
+
+```{r plot-helpers}
+pie_one <- function(df_row) {
+  ggplot(df_row, aes(x = "", y = count, fill = category)) +
+    geom_col(width = 1, colour = "white", linewidth = 0.5,
+             position = position_stack(reverse = TRUE)) +
+    coord_polar(theta = "y", start = start_rad, direction = pie_dir) +
+    scale_fill_manual(values = cat_colors, drop = FALSE, guide = "none") +
+    theme_void(base_family = "Arial") +
+    theme(plot.margin = margin(1, 1, 1, 1))
+}
+
+condition_header <- function(label) {
+  ggplot() +
+    annotate("segment", x = 0.05, xend = 0.10, y = 0.10, yend = 0.55, linewidth = 0.4) +
+    annotate("segment", x = 0.10, xend = 0.45, y = 0.55, yend = 0.55, linewidth = 0.4) +
+    annotate("segment", x = 0.95, xend = 0.90, y = 0.10, yend = 0.55, linewidth = 0.4) +
+    annotate("segment", x = 0.90, xend = 0.55, y = 0.55, yend = 0.55, linewidth = 0.4) +
+    annotate("text", x = 0.5, y = 0.65, label = label,
+             size = 3.8, fontface = "plain", vjust = 0) +
+    coord_cartesian(xlim = c(0, 1), ylim = c(0, 1), expand = FALSE) +
+    theme_void(base_family = "Arial")
+}
+```
+
+```{r build-panel}
+conds <- levels(dat$condition)
+ages  <- levels(dat$age)
+
+banner <- ggplot() +
+  annotate("rect", xmin = 0, xmax = 1, ymin = 0, ymax = 1,
+           fill = "#E6E6F2", colour = "grey70", linewidth = 0.3) +
+  annotate("text", x = 0.5, y = 0.5, label = CELL,
+           size = 7, fontface = "plain") +
+  coord_cartesian(xlim = c(0, 1), ylim = c(0, 1), expand = FALSE) +
+  theme_void(base_family = "Arial")
+
+age_lbl <- function(a) {
+  ggplot() +
+    annotate("text", x = 0.5, y = 0.5, label = a,
+             size = 4.5, fontface = "plain") +
+    coord_cartesian(xlim = c(0, 1), ylim = c(0, 1), expand = FALSE) +
+    theme_void(base_family = "Arial")
+}
+
+pies <- list()
+for (cc in conds) for (a in ages) {
+  pies[[length(pies) + 1]] <- pie_one(dat |> filter(condition == cc, age == a))
+}
+
+plots <- c(
+  list(banner),
+  list(age_lbl("P11"), age_lbl("P45")),
+  list(condition_header(conds[1])), pies[1:2],
+  list(condition_header(conds[2])), pies[3:4],
+  list(condition_header(conds[3])), pies[5:6],
+  list(condition_header(conds[4])), pies[7:8]
+)
+design <- "
+  AA
+  BC
+  DD
+  EF
+  GG
+  HI
+  JJ
+  KL
+  MM
+  NO
+"
+heights <- c(0.55, 0.30, 0.30, 1, 0.30, 1, 0.30, 1, 0.30, 1)
+body <- wrap_plots(plots, design = design, heights = heights)
+
+panel <- cowplot::ggdraw(body)
+```
+
+# Figure 4N
+
+```{r show, fig.width=5.5, fig.height=13}
+panel
+ggsave("Fig4N.pdf", plot = panel, width = 5.5, height = 13,
+       device = cairo_pdf)
+ggsave("Fig4N.png", plot = panel, width = 5.5, height = 13, dpi = 300, bg = "white")
+```
+
+# Tweaking the look
+
+| Symptom                                  | Fix                                          |
+|------------------------------------------|----------------------------------------------|
+| Wedges in the wrong order                | edit `plot_order` in YAML params              |
+| All pies rotated the same amount         | change `start_deg`                            |
+| Wedges run the wrong way around the pie  | flip `direction` between `1` and `-1`         |
+| Need a different colour for a category   | edit `cat_colors` in the `palette` chunk      |
+
+# Session info
+
+```{r session}
+sessionInfo()
+```

@@ -1,0 +1,132 @@
+---
+title: "Figure Fig2D — P11 — EGL surface area (µm²)"
+subtitle: "Mouse cerebellum, four groups (Sal-N / Sal-Hx / LPS-N / LPS-Hx); ANOVA + Tukey HSD post-hoc"
+author: "Kratimenos Lab"
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: cosmo
+    code_folding: hide
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE,
+                      fig.width = 2.8, fig.height = 4.6, dpi = 300)
+library(readr); library(dplyr); library(ggplot2); library(emmeans)
+library(knitr); library(kableExtra)
+```
+
+# Overview
+
+Panel **Fig2D** (P11 — EGL surface area (µm²)) regenerated in R directly from the lab's GraphPad
+Prism source values (consolidated CSV: `data/Fig2_AE_data.csv`, panel
+`C`). One-way ANOVA across the four groups, followed by pairwise
+contrasts via `emmeans` with `adjust = "tukey"` (matches the post-hoc
+used in the published Prism analysis).
+
+# Data
+
+```{r load}
+dat <- read_csv("data/Fig2_AE_data.csv", show_col_types = FALSE) |>
+  filter(Panel == "C") |>
+  mutate(Group = factor(Group, levels = c("Sal-N","Sal-Hx","LPS-N","LPS-Hx")))
+
+dat |> count(Group, name = "n") |>
+  kable(caption = "Replicates per group (Fig2D)") |>
+  kable_styling(full_width = FALSE)
+```
+
+# Statistics
+
+```{r stats}
+stars <- function(p) ifelse(p < 1e-4, "****",
+                     ifelse(p < 1e-3, "***",
+                     ifelse(p < 1e-2, "**",
+                     ifelse(p < 5e-2, "*", "ns"))))
+
+fit <- aov(Value ~ Group, data = dat)
+anova_tab <- summary(fit)[[1]]
+emm <- emmeans(fit, "Group")
+ph  <- as.data.frame(pairs(emm, adjust = "tukey")) |>
+         mutate(sig = stars(p.value))
+
+anova_tab |>
+  as.data.frame() |>
+  tibble::rownames_to_column("Source") |>
+  kable(digits = 4, caption = "One-way ANOVA") |>
+  kable_styling(full_width = FALSE)
+
+ph |>
+  kable(digits = 4,
+        caption = sprintf("Pairwise contrasts (Tukey HSD)")) |>
+  kable_styling(full_width = FALSE)
+```
+
+# Figure
+
+```{r plot, fig.width=2.8, fig.height=4.6}
+fill_cols <- c("Sal-N"="#DCE3EF","Sal-Hx"="#9DB0CB","LPS-N"="#41608F","LPS-Hx"="#D9D9D9")
+
+summ <- dat |> group_by(Group) |>
+  summarise(mean = mean(Value), sd = sd(Value),
+            top  = max(Value) + sd(Value), .groups = "drop")
+
+sig_pairs <- ph |> filter(p.value < 0.05)
+lev <- levels(dat$Group)
+sig <- if (nrow(sig_pairs)) do.call(rbind, lapply(seq_len(nrow(sig_pairs)), function(i) {
+  gs <- strsplit(as.character(sig_pairs$contrast[i]), " - ")[[1]]
+  gs <- gsub("^\\(|\\)$", "", gs)
+  data.frame(x = which(lev == gs[1]), xend = which(lev == gs[2]), lab = sig_pairs$sig[i])
+})) else NULL
+
+span <- 55; step <- span * 0.065
+base <- max(summ$top) + step * 0.7
+y_top <- 55
+if (!is.null(sig)) { sig$y <- base + (seq_len(nrow(sig)) - 1) * step
+                     y_top <- max(y_top, max(sig$y) + step) }
+
+set.seed(7)
+p <- ggplot(summ, aes(Group, mean)) +
+  geom_col(aes(fill = Group), width = 0.62, colour = "black", linewidth = 0.35) +
+  geom_errorbar(aes(ymin = mean - sd, ymax = mean + sd),
+                width = 0.22, linewidth = 0.35) +
+  geom_point(data = dat, aes(Group, Value, fill = Group),
+             position = position_jitter(width = 0.12, seed = 7),
+             size = 1.6, shape = 21, colour = "black", stroke = 0.3,
+             show.legend = FALSE) +
+  scale_fill_manual(values = fill_cols) +
+  scale_y_continuous(limits = c(0, y_top),
+                     breaks = seq(0, 55, 10), expand = c(0, 0)) +
+  labs(title = "P11", x = NULL, y = "EGL surface area (µm²)") +
+  theme_classic(base_size = 12, base_family = "Arial") +
+  theme(legend.position  = "none",
+        plot.title       = element_text(hjust = 0.5),
+        axis.text.x      = element_text(angle = 90, hjust = 1, vjust = 0.5),
+        plot.background  = element_rect(fill = "white", color = NA),
+        panel.background = element_rect(fill = "white", color = NA))
+
+if (!is.null(sig)) for (i in seq_len(nrow(sig))) {
+  yy <- sig$y[i]
+  p <- p +
+    annotate("segment", x = sig$x[i],    xend = sig$xend[i], y = yy, yend = yy, linewidth = 0.3) +
+    annotate("segment", x = sig$x[i],    xend = sig$x[i],    y = yy, yend = yy - step * 0.18, linewidth = 0.3) +
+    annotate("segment", x = sig$xend[i], xend = sig$xend[i], y = yy, yend = yy - step * 0.18, linewidth = 0.3) +
+    annotate("text", x = (sig$x[i] + sig$xend[i]) / 2, y = yy + step * 0.05,
+             label = sig$lab[i], vjust = 0, fontface = "bold", size = 3.6)
+}
+
+p
+
+ggsave("Fig2D.pdf", p, width = 2.6, height = 4.4, device = cairo_pdf)
+ggsave("Fig2D.png", p, width = 2.6, height = 4.4, dpi = 300, bg = "white")
+```
+
+# Session info
+
+```{r session, echo=FALSE}
+sessionInfo()
+```
+

@@ -1,0 +1,136 @@
+---
+title: "Figure S4 — GSEA GO enrichment of CoGAPS patterns M-1 and M-4"
+subtitle: "Per-pattern top-25 GO terms — single-column dotplots"
+author: "Kratimenos Lab"
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: flatly
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,
+                      fig.width = 10, fig.height = 7, dpi = 300)
+suppressPackageStartupMessages({
+  library(readxl); library(dplyr); library(tidyr); library(tibble)
+  library(ggplot2); library(patchwork); library(knitr); library(kableExtra)
+})
+```
+
+# Overview
+
+Figure S4 shows the top 25 GO terms (MSigDB C5 \ HPO; positive-tail
+`fgsea` scoring) for the two CoGAPS patterns highlighted in Figure 3:
+
+- **M-1** — Synaptic-structure / neurotransmission / membrane-signalling
+  (the pattern with the strongest signed FDR in **Sal-Hx** at P45).
+- **M-4** — Electron-transport chain / ATP synthesis / mitochondrial
+  organisation (the pattern with the strongest signed FDR in **LPS-N**
+  and **LPS-Hx** at P45).
+
+Each panel is a single-column dotplot where the **dot size** encodes
+–log₁₀(p) and the **dot color** encodes NES; pathways are sorted by
+ascending p-value, most significant on top.
+
+# Source data
+
+Pre-computed `fgsea` results from the mouse cerebellum CoGAPS n=15
+(folia-restricted) run. Each sheet (`Pattern_1` … `Pattern_15`) lists
+`pathway, pval, padj, NES, size` for every GO term tested.
+
+```{r load}
+gsea_xlsx <- "data/mouse_CB_folia_cogaps_n15_gsea_fgseaGO_geneWeights.xlsx"
+
+sheets <- c("Pattern_1", "Pattern_4")
+pattern_labels <- c("Pattern_1" = "M-1", "Pattern_4" = "M-4")
+
+df <- lapply(sheets, function(s) {
+  read_excel(gsea_xlsx, sheet = s) %>%
+    select(pathway, pval, padj, NES, size) %>%
+    mutate(Sheet = s)
+}) %>% bind_rows()
+
+top_n <- 25
+```
+
+```{r build}
+build_single_pattern <- function(focus_sheet) {
+  df %>%
+    filter(Sheet == focus_sheet) %>%
+    arrange(pval) %>%
+    slice_head(n = top_n) %>%
+    mutate(
+      Pattern = factor(pattern_labels[Sheet], levels = c("M-1", "M-4")),
+      Pathway = factor(pathway, levels = rev(pathway)),
+      nlog10p = -log10(pval)
+    )
+}
+
+panel_M1 <- build_single_pattern("Pattern_1")
+panel_M4 <- build_single_pattern("Pattern_4")
+stopifnot(nrow(panel_M1) == top_n, nrow(panel_M4) == top_n)
+
+# Shared scale limits so the two panels are visually comparable
+nes_lim  <- range(c(panel_M1$NES,     panel_M4$NES),     na.rm = TRUE)
+size_lim <- range(c(panel_M1$nlog10p, panel_M4$nlog10p), na.rm = TRUE)
+```
+
+# Per-pattern summary
+
+```{r counts}
+tibble(
+  Pattern   = c("M-1", "M-4"),
+  Top_N     = c(nrow(panel_M1), nrow(panel_M4)),
+  Min_pval  = c(sprintf("%.2e", min(panel_M1$pval)),
+                sprintf("%.2e", min(panel_M4$pval))),
+  Max_NES   = c(sprintf("%.2f", max(panel_M1$NES)),
+                sprintf("%.2f", max(panel_M4$NES))),
+  Top_pathway = c(as.character(panel_M1$pathway[which.min(panel_M1$pval)]),
+                  as.character(panel_M4$pathway[which.min(panel_M4$pval)]))
+) %>%
+  kable(caption = "Per-pattern summary (top 25 GO terms by p-value)") %>%
+  kable_styling(bootstrap_options = c("striped","hover","condensed"),
+                full_width = FALSE)
+```
+
+# Figure S4 — single-column dotplots
+
+```{r figs4, fig.width=10, fig.height=7}
+make_single_col <- function(d, title, show_legend = FALSE) {
+  ggplot(d, aes(x = Pattern, y = Pathway)) +
+    geom_point(aes(size = nlog10p, color = NES)) +
+    scale_color_gradient(low = "#FBE6E1", high = "#B40426",
+                         limits = nes_lim, name = "NES") +
+    scale_size_continuous(range = c(1.5, 7), limits = size_lim,
+                          name = "-Log10(P)") +
+    theme_minimal(base_size = 9, base_family = "Arial") +
+    theme(
+      axis.text.y        = element_text(size = 7),
+      axis.text.x        = element_text(size = 11, face = "bold"),
+      panel.grid.minor   = element_blank(),
+      panel.grid.major.x = element_blank(),
+      legend.position    = if (show_legend) "right" else "none",
+      plot.title         = element_text(hjust = 0.5, size = 11)
+    ) +
+    labs(x = NULL, y = NULL, title = title)
+}
+
+p_M1 <- make_single_col(panel_M1, "M-1 (top 25)", show_legend = FALSE)
+p_M4 <- make_single_col(panel_M4, "M-4 (top 25)", show_legend = TRUE)
+
+p_figs4 <- p_M1 + p_M4 + plot_layout(ncol = 2)
+p_figs4
+
+ggsave("FigS4.pdf", p_figs4, width = 10, height = 7,
+       device = cairo_pdf)
+ggsave("FigS4.png", p_figs4, width = 10, height = 7, dpi = 300, bg = "white")
+```
+
+# Session info
+
+```{r session}
+sessionInfo()
+```

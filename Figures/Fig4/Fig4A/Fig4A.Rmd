@@ -1,0 +1,156 @@
+---
+title: "Figure 4A — Mitochondrial Proton Leak at P11"
+author: "Kratimenos Lab"
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    theme: cosmo
+    code_folding: hide
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE,
+                      fig.width = 2.8, fig.height = 5.4, dpi = 96)
+```
+
+# Overview
+
+**Figure 4A** — mitochondrial proton leak (pmol O₂/min) at **P11** (n = 9 / 14 / 8 / 9 for Sal-N / Sal-Hx / LPS-N / LPS-Hx; two P11 mice excluded as Grubbs borderline outliers — see below). Bars = group mean; error bars = SEM; dots = individual mice. No pairwise contrasts at P11 reach p < 0.05 in the combined two-way GROUP × AGE mixed-effects model (the significant contrasts at P45 are shown in Figure 4B).
+
+```{r packages}
+library(tidyverse)
+library(readxl)
+library(rstatix)
+library(emmeans)
+library(outliers)
+library(ggtext)
+library(knitr)
+
+DATA_FILE <- "data/Fig4ABC_data.xlsx"
+group_levels <- c("Sal-N", "Sal-Hx", "LPS-N", "LPS-Hx")
+group_fill   <- c("Sal-N"="#C6D0E2", "Sal-Hx"="#7A8FA8",
+                  "LPS-N"="#3A4D68", "LPS-Hx"="#C8B8BC")
+group_dot    <- c("Sal-N"="#4A6FA5", "Sal-Hx"="#2C4A6E",
+                  "LPS-N"="#0D1F38", "LPS-Hx"="#A55C66")
+theme_panel <- theme_classic(base_size = 13, base_family = "Arial") +
+  theme(
+    panel.grid = element_blank(), legend.position = "none",
+    axis.title.y = element_text(size = 11, margin = margin(r = 5)),
+    axis.title.x = element_blank(),
+    axis.text.y  = element_text(size = 10, color = "black"),
+    axis.text.x  = element_text(size = 13, color = "black",
+                                angle = 90, hjust = 1, vjust = 0.5),
+    axis.line  = element_line(linewidth = 0.5),
+    axis.ticks = element_line(linewidth = 0.5),
+    plot.title = element_textbox_simple(
+      size = 10, hjust = 0.5, halign = 0.5,
+      fill = "#E8E5EE", color = "grey15", box.color = NA,
+      padding = margin(4, 8, 4, 8), margin = margin(0, 0, 6, 0),
+      r = unit(2, "pt"), width = grid::unit(0.65, "npc")),
+    plot.margin = margin(6, 10, 6, 6)
+  )
+```
+
+```{r load}
+d_full <- bind_rows(
+  read_excel(DATA_FILE, sheet = "protonleak_p11") |> mutate(Age = "P11"),
+  read_excel(DATA_FILE, sheet = "protonleak_p45") |> mutate(Age = "P45")
+) |> mutate(Group = factor(Group, levels = group_levels),
+            Age   = factor(Age,   levels = c("P11","P45"))) |>
+  rename(y = ProtonLeak_pmol_min)
+```
+
+# Outlier analysis (P11)
+
+Grubbs' test (one-sided, most-extreme high value) per P11 group; borderline threshold p < 0.10.
+
+```{r grubbs}
+grubbs_p11 <- d_full |> filter(Age == "P11") |>
+  group_by(Group) |>
+  summarise(N = n(),
+            Max_value   = round(max(y), 2),
+            Max_mouse   = MouseID[which.max(y)],
+            G_statistic = round(grubbs.test(y, type = 10)$statistic[[1]], 3),
+            P_value     = round(grubbs.test(y, type = 10)$p.value, 4),
+            .groups = "drop") |>
+  mutate(Decision = ifelse(P_value < 0.10, "Exclude (borderline outlier)", "Retain"))
+kable(grubbs_p11, caption = "Grubbs test for a single high outlier — P11 (one-sided)")
+```
+
+- **P11 LPS-Hx**: mouse **P11-DH10 = 91.95 pmol/min** (G = 2.14, p = 0.062) — excluded.
+- **P11 LPS-N**: mouse **P11-LPSNx9 = 61.76 pmol/min** (G = 2.10, p = 0.053) — excluded.
+
+```{r exclude}
+d <- d_full |> filter(!(Age == "P11" & MouseID %in% c("P11-DH10", "P11-LPSNx9")))
+d |> filter(Age == "P11") |> count(Group) |>
+  kable(caption = "P11 cohort after outlier exclusion")
+```
+
+# Combined statistics (P11 + P45)
+
+The asterisks shown in Figure 4B come from a single two-way GROUP × AGE model
+fit to both timepoints. We run that full model here so the P11 stats are
+reported in their proper context.
+
+```{r aov-2way}
+aov_2way <- aov(y ~ Group * Age, data = d)
+broom::tidy(aov_2way) |>
+  mutate(across(where(is.numeric), \(x) round(x, 4))) |>
+  kable(caption = "Two-way ANOVA — Proton Leak ~ Group × Age (n = 63)")
+```
+
+```{r lsmeans}
+emm <- emmeans(aov_2way, ~ Group | Age)
+pw  <- as.data.frame(pairs(emm, adjust = "none"))
+sig_stars <- function(p) case_when(p < 0.0001 ~ "****", p < 0.001 ~ "***",
+                                    p < 0.01 ~ "**", p < 0.05 ~ "*", TRUE ~ "ns")
+pw |>
+  mutate(across(where(is.numeric), \(x) round(x, 4)),
+         signif = sig_stars(p.value)) |>
+  filter(Age == "P11") |>
+  kable(caption = "LSMEANS pairwise contrasts at P11 (unadjusted). None reach p < 0.05.")
+```
+
+# Per-group summary — P11
+
+```{r summary-tab}
+d |> filter(Age == "P11") |>
+  group_by(Group) |>
+  summarise(N = n(), Mean = round(mean(y), 2),
+            SEM  = round(sd(y) / sqrt(n()), 2), .groups = "drop") |>
+  kable(caption = "P11 group mean ± SEM after outlier exclusion")
+```
+
+# Figure 4A
+
+```{r fig4a, fig.width=2.8, fig.height=5.4, fig.cap="Figure 4A. Mitochondrial proton leak at P11 (pmol O₂/min). Bars = group mean; error bars = SEM; dots = individual mice. n = 9/14/8/9. Two P11 outliers excluded (P11-DH10 LPS-Hx, p = 0.062; P11-LPSNx9 LPS-N, p = 0.053)."}
+p4a <- ggplot(d |> filter(Age == "P11"), aes(x = Group, y = y)) +
+  stat_summary(aes(fill = Group), fun = mean, geom = "col",
+               width = 0.45, color = "black", linewidth = 0.40, alpha = 0.60) +
+  stat_summary(fun.data = mean_se, geom = "errorbar",
+               width = 0.14, linewidth = 0.50, color = "black") +
+  geom_jitter(aes(fill = Group, color = Group), shape = 21,
+              width = 0.09, size = 2.4, stroke = 0.6) +
+  scale_fill_manual(values = group_fill) +
+  scale_color_manual(values = group_dot) +
+  scale_x_discrete(expand = expansion(add = c(0.55, 0.30))) +
+  scale_y_continuous(limits = c(0, 130),
+                     breaks = c(0, 20, 40, 60, 80, 100),
+                     expand = expansion(mult = c(0, 0))) +
+  labs(y = expression("OCR (pmol O"[2]*"/min)"),
+       title = "P11 Proton leak") +
+  theme_panel
+p4a
+ggsave("Fig4A.pdf", plot = p4a, width = 2.6, height = 5.4,
+       device = cairo_pdf)
+ggsave("Fig4A.png", plot = p4a, width = 4.5, height = 5.4, dpi = 300, bg = "white")
+```
+
+# Session info
+
+```{r session}
+sessionInfo()
+```

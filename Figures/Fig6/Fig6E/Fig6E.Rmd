@@ -1,0 +1,138 @@
+---
+title: "Figure 6E — PC dendritic length (P45)"
+author: "Kratimenos Lab"
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+output:
+  html_document:
+    theme: cosmo
+    toc: true
+    toc_float: true
+    code_folding: hide
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,
+                      fig.width = 2.7, fig.height = 5.0, dpi = 96)
+suppressPackageStartupMessages({
+  library(tidyverse); library(rstatix); library(ggtext); library(knitr); library(scales)
+})
+
+PANEL <- "D"
+DATA_FILE <- "data/Fig6DE_data.csv"
+group_levels <- c("Sal-N","Sal-Hx","LPS-N","LPS-Hx")
+group_fill <- c("Sal-N"="#C6D0E2","Sal-Hx"="#7A8FA8","LPS-N"="#3A4D68","LPS-Hx"="#C8B8BC")
+group_dot  <- c("Sal-N"="#4A6FA5","Sal-Hx"="#2C4A6E","LPS-N"="#0D1F38","LPS-Hx"="#A55C66")
+theme_panel <- theme_classic(base_size = 13, base_family = "Arial") +
+  theme(panel.grid = element_blank(), legend.position = "none",
+        axis.title.x = element_blank(),
+        axis.text.x  = element_text(size = 12, color = "black", angle = 90, hjust = 1, vjust = 0.5),
+        plot.title = element_text(size = 11, face = "plain", color = "grey35", hjust = 0.5, margin = margin(0, 0, 6, 0)))
+p_to_stars <- function(p) {
+  if (is.na(p)) return("")
+  if (p < 0.0001) "****" else if (p < 0.001) "***" else
+  if (p < 0.01)  "**"   else if (p < 0.05) "*"   else "ns"
+}
+```
+
+# Overview
+
+**Figure 6E** — PC dendritic length (P45). Per-mouse dendritic metrics = mean across 20 traced
+Purkinje cells per animal (Neurolucida 360, 60x confocal). n = 4-6 per group.
+Test: one-way ANOVA across the four groups; post-hoc: Tukey HSD (family-wise
+alpha = 0.05). Matches the published Prism workflow exactly.
+
+```{r load}
+d <- read_csv(DATA_FILE, show_col_types = FALSE) |>
+  filter(panel == PANEL) |>
+  mutate(group = factor(group, levels = group_levels))
+kable(d |> count(group, name = "n_mice"),
+      caption = sprintf("Per-group n (per-mouse averages) — Panel %s", PANEL))
+```
+
+# One-way ANOVA omnibus
+
+```{r aov}
+a <- summary(aov(value ~ group, data = d))[[1]]
+data.frame(test = "One-way ANOVA",
+           F_stat = signif(a$`F value`[1], 4),
+           df = paste(a$Df[1], a$Df[2], sep = ","),
+           p_value = signif(a$`Pr(>F)`[1], 4),
+           signif = p_to_stars(a$`Pr(>F)`[1])) |>
+  kable(caption = "Omnibus one-way ANOVA")
+```
+
+# Tukey HSD pairwise post-hoc
+
+```{r tukey}
+ph <- rstatix::tukey_hsd(d, value ~ group)
+ph |> kable(caption = "Tukey HSD pairwise contrasts (family-wise alpha = 0.05).",
+            digits = 4)
+```
+
+# Per-group summary
+
+```{r summary}
+d |> group_by(group) |>
+  summarise(N = n(),
+            Mean = round(mean(value), 3),
+            SD   = round(sd(value), 3),
+            SEM  = round(sd(value)/sqrt(n()), 3),
+            .groups = "drop") |>
+  kable(caption = "Per-group mean +/- SEM (per-mouse averages)")
+```
+
+# Figure 6E
+
+```{r plot, fig.width=2.7, fig.height=5.0}
+sig <- ph |> filter(p.adj < 0.05) |> arrange(p.adj) |>
+  mutate(label = vapply(p.adj, p_to_stars, character(1)),
+         xmin  = match(group1, group_levels),
+         xmax  = match(group2, group_levels))
+ymax <- 1700
+y_breaks <- seq(0, 1600, by = 400)
+ypad <- if (nrow(sig) > 0) ymax * (1 + 0.08 * (1 + nrow(sig))) else ymax * 1.05
+
+p <- ggplot(d, aes(x = group, y = value)) +
+  stat_summary(aes(fill = group), fun = mean, geom = "col",
+               width = 0.65, color = "black", linewidth = 0.40, alpha = 0.60) +
+  stat_summary(fun.data = mean_se, geom = "errorbar",
+               width = 0.14, linewidth = 0.50, color = "black") +
+  geom_jitter(aes(fill = group, color = group), shape = 21,
+              width = 0.09, size = 2.0, stroke = 0.4, alpha = 0.90) +
+  scale_fill_manual(values = group_fill) +
+  scale_color_manual(values = group_dot) +
+  scale_x_discrete(expand = expansion(add = c(0.55, 0.40))) +
+  scale_y_continuous(breaks = y_breaks,
+                     expand = expansion(mult = c(0, 0)),
+                     labels = scales::label_number()) +
+  coord_cartesian(ylim = c(0, ypad), clip = "off") +
+  labs(y = "Dendritic length (μm)", title = "PC dendritic length (P45)") +
+  theme_panel
+
+if (nrow(sig) > 0) {
+  sig$y <- ymax * (1.00 + 0.07 * seq_len(nrow(sig)))
+  p <- p +
+    geom_segment(data = sig, aes(x = xmin, xend = xmax, y = y, yend = y),
+                 inherit.aes = FALSE, linewidth = 0.4) +
+    geom_segment(data = sig, aes(x = xmin, xend = xmin,
+                                 y = y, yend = y - ymax * 0.015),
+                 inherit.aes = FALSE, linewidth = 0.4) +
+    geom_segment(data = sig, aes(x = xmax, xend = xmax,
+                                 y = y, yend = y - ymax * 0.015),
+                 inherit.aes = FALSE, linewidth = 0.4) +
+    geom_text(data = sig, aes(x = (xmin + xmax)/2,
+                              y = y + ymax * 0.035, label = label),
+              inherit.aes = FALSE, size = 4, fontface = "bold")
+}
+p
+ggsave("Fig6E.pdf", plot = p, width = 2.7, height = 5.0,
+       device = cairo_pdf)
+ggsave("Fig6E.png", plot = p, width = 2.7, height = 5.0, dpi = 300, bg = "white")
+```
+
+# Session info
+
+```{r session}
+sessionInfo()
+```

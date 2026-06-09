@@ -1,0 +1,202 @@
+---
+title: "Figure 6B — VGLUT2⁺ puncta density (total ML)"
+author: "Kratimenos Lab"
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+output:
+  html_document:
+    self_contained: true
+    theme: cosmo
+    toc: true
+    toc_float: true
+    code_folding: hide
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,
+                      fig.width = 3.2, fig.height = 5.2, dpi = 150)
+suppressPackageStartupMessages({
+  library(tidyverse); library(knitr); library(kableExtra)
+})
+set.seed(42)
+```
+
+# Overview
+
+Per-animal **total VGLUT2⁺ puncta density** (puncta / μm²) in the cerebellar
+molecular layer across the four perinatal-insult groups
+(n = 6 / 4 / 5 / 5 for Sal-N / Sal-Hx / LPS-N / LPS-Hx).
+
+Statistical test: **one-way ANOVA** (Shapiro–Wilk p > 0.05 in every group,
+Levene p > 0.05) with **Tukey HSD** pairwise post-hoc. Kruskal–Wallis is
+reported as a non-parametric sensitivity check.
+
+The companion outer-vs-inner ML spatial-redistribution analysis lives in
+the sibling **`Fig6C/`** folder.
+
+# Data
+
+```{r data}
+project_dir <- "."
+derived     <- file.path(project_dir, "derived")
+
+group_levels <- c("Sal-N","Sal-Hx","LPS-N","LPS-Hx")
+group_fill   <- c("Sal-N"="#C6D0E2","Sal-Hx"="#7A8FA8",
+                  "LPS-N"="#3A4D68","LPS-Hx"="#C8B8BC")
+
+total_density <- read_csv(file.path(derived, "per_animal_total_density.csv"),
+                          show_col_types = FALSE) |>
+  mutate(group_label = factor(group_label, levels = group_levels))
+
+total_density |>
+  group_by(group_label) |>
+  summarise(n    = n(),
+            mean = signif(mean(total_density_per_um2), 4),
+            sem  = signif(sd(total_density_per_um2) / sqrt(n()), 4),
+            sd   = signif(sd(total_density_per_um2), 4),
+            .groups = "drop") |>
+  kable(caption = "Per-group descriptives.") |>
+  kable_styling(full_width = FALSE)
+```
+
+# Assumption checks
+
+```{r assumptions}
+sw <- total_density |> group_by(group_label) |>
+  summarise(shapiro_p = signif(shapiro.test(total_density_per_um2)$p.value, 3),
+            .groups = "drop")
+lev <- car::leveneTest(total_density_per_um2 ~ group_label,
+                       data = total_density)
+
+bind_rows(
+  sw |> transmute(Check = paste("Shapiro-Wilk:", group_label),
+                  Statistic = "", p = shapiro_p),
+  tibble(Check     = "Levene (equality of variances)",
+         Statistic = sprintf("F = %.3f", lev$`F value`[1]),
+         p         = signif(lev$`Pr(>F)`[1], 3))
+) |>
+  kable(caption = "Normality and homoscedasticity checks.") |>
+  kable_styling(full_width = FALSE)
+```
+
+# Statistical tests
+
+```{r stats}
+p_label <- function(p) {
+  if (is.na(p))         ""
+  else if (p < 0.0001)  "****"
+  else if (p < 0.001)   "***"
+  else if (p < 0.01)    "**"
+  else if (p < 0.05)    "*"
+  else                  ""
+}
+
+# Robust parsing of Tukey contrast strings: "Sal-Hx-Sal-N" -> c(2, 1)
+parse_pair_positions <- function(pair_str, levels) {
+  s <- gsub("\\s+", "", pair_str)
+  hits <- vapply(levels, \(g) grepl(paste0("(^|-)", g, "(-|$)"), s),
+                 logical(1))
+  m <- levels[hits]
+  if (length(m) != 2) return(c(NA_integer_, NA_integer_))
+  sort(match(m, levels))
+}
+
+m_anv   <- aov(total_density_per_um2 ~ group_label, data = total_density)
+m_anv_s <- summary(m_anv)[[1]]
+m_kw    <- kruskal.test(total_density_per_um2 ~ group_label,
+                        data = total_density)
+
+tibble(
+  Test = c("One-way ANOVA (primary)",
+           "Kruskal–Wallis (sensitivity)"),
+  Statistic = c(sprintf("F = %.3f",     m_anv_s$`F value`[1]),
+                sprintf("chi² = %.3f",   m_kw$statistic)),
+  df = c(sprintf("%d, %d", m_anv_s$Df[1], m_anv_s$Df[2]),
+         as.character(m_kw$parameter)),
+  `p-value` = signif(c(m_anv_s$`Pr(>F)`[1], m_kw$p.value), 4)
+) |>
+  kable(caption = "Omnibus tests.") |>
+  kable_styling(full_width = FALSE)
+
+tuk_raw <- TukeyHSD(m_anv)[[1]] |> as.data.frame() |>
+  tibble::rownames_to_column("pair")
+positions <- t(sapply(tuk_raw$pair, parse_pair_positions, levels = group_levels))
+tuk <- tuk_raw |>
+  mutate(g_lo = group_levels[positions[, 1]],
+         g_hi = group_levels[positions[, 2]],
+         p_adj = `p adj`) |>
+  transmute(Contrast = paste(g_lo, "vs", g_hi),
+            group1 = g_lo, group2 = g_hi,
+            `mean diff` = signif(diff, 4),
+            `95% CI lo` = signif(lwr,  4),
+            `95% CI hi` = signif(upr,  4),
+            `p (Tukey HSD)` = signif(p_adj, 4),
+            Sig = vapply(p_adj, p_label, character(1)),
+            p_adj = p_adj)
+
+tuk |> select(-group1, -group2, -p_adj) |>
+  kable(caption = "Tukey HSD pairwise contrasts.") |>
+  kable_styling(full_width = FALSE)
+```
+
+# Figure
+
+```{r plot, fig.width=3.2, fig.height=5.2}
+ymax_p <- max(total_density$total_density_per_um2, na.rm = TRUE)
+top_p  <- ymax_p * 1.95
+
+p_primary <- ggplot(total_density,
+                    aes(x = group_label, y = total_density_per_um2)) +
+  geom_boxplot(aes(fill = group_label), alpha = 0.55,
+               width = 0.40, outlier.shape = NA, color = "black",
+               linewidth = 0.35) +
+  geom_jitter(aes(fill = group_label), shape = 21, width = 0.08,
+              size = 2.4, stroke = 0.5) +
+  scale_fill_manual(values = group_fill) +
+  scale_x_discrete(expand = expansion(add = c(0.55, 0.30))) +
+  coord_cartesian(ylim = c(0, top_p)) +
+  labs(x = NULL,
+       y = expression("VGLUT2 puncta / area (per μm"^2*")"),
+       title = expression("VGLUT2"^"+"~"puncta density")) +
+  theme_classic(base_size = 13, base_family = "Arial") +
+  theme(legend.position = "none",
+        plot.title.position = "plot",
+        plot.title   = element_text(size = 12, face = "bold",
+                                    hjust = 0.5, margin = margin(b = 6)),
+        axis.title.y = element_text(size = 13, color = "black",
+                                    margin = margin(r = 5)),
+        axis.text.x  = element_text(color = "black", size = 12,
+                                    angle = 90, hjust = 1, vjust = 0.5),
+        axis.text.y  = element_text(color = "black", size = 12),
+        plot.margin  = margin(8, 8, 4, 4))
+
+# Significance brackets for significant Tukey pairs
+sig <- tuk |> filter(!is.na(p_adj), p_adj < 0.05) |> arrange(p_adj)
+if (nrow(sig) > 0) {
+  y_base <- ymax_p * 1.10; step <- ymax_p * 0.13
+  for (i in seq_len(nrow(sig))) {
+    x1 <- match(sig$group1[i], group_levels)
+    x2 <- match(sig$group2[i], group_levels)
+    yb <- y_base + (i - 1) * step
+    p_primary <- p_primary +
+      annotate("segment", x = min(x1,x2), xend = max(x1,x2),
+               y = yb, yend = yb, linewidth = 0.5) +
+      annotate("segment", x = min(x1,x2), xend = min(x1,x2),
+               y = yb, yend = yb - 0.02 * ymax_p, linewidth = 0.5) +
+      annotate("segment", x = max(x1,x2), xend = max(x1,x2),
+               y = yb, yend = yb - 0.02 * ymax_p, linewidth = 0.5) +
+      annotate("text", x = (x1 + x2) / 2, y = yb + 0.025 * ymax_p,
+               label = p_label(sig$p_adj[i]), size = 5, fontface = "bold")
+  }
+}
+
+ggsave("Fig6B.pdf", p_primary, width = 3.2, height = 5.2, device = cairo_pdf)
+ggsave("Fig6B.png", p_primary, width = 3.2, height = 5.2, dpi = 600, bg = "white")
+p_primary
+```
+
+# Session info
+
+```{r session, echo=FALSE}
+sessionInfo()
+```

@@ -1,0 +1,341 @@
+---
+title: "Figure S1 — Cross-species enrichment of P11 MIA+Hx (dual-hit) insult-unique signature"
+subtitle: "Panel A: CAMERA heatmap · Panel B: limma barcode · Panel C: gprofiler dotplot"
+author: "Kratimenos Lab"
+date: "`r format(Sys.Date(), '%Y-%m-%d')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    code_folding: hide
+    theme: flatly
+    df_print: paged
+    fig_width: 8
+    fig_height: 5
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE,
+                      fig.align = "center", dpi = 150)
+
+# ---- Upstream analysis tree (lives under the project's analysis/ folder) ----
+ANALYSIS_ROOT <- normalizePath(file.path(
+  "..", "..", "analysis", "Cross-species_DEG", "analysis_2026-05-14_unified"
+))
+stopifnot(dir.exists(ANALYSIS_ROOT))
+
+source(file.path(ANALYSIS_ROOT, "per_comparison", "_shared", "helpers.R"))
+suppressPackageStartupMessages({
+  library(limma); library(knitr); library(kableExtra); library(org.Hs.eg.db)
+})
+
+# Config (rebuilt with repo-relative paths)
+ROOT       <- ANALYSIS_ROOT
+PER_DIR    <- file.path(ROOT, "per_comparison")
+ORTHO_F    <- file.path(ROOT, "ortho_cache", "orthology_mm_hs.csv")
+
+FIG_DIR    <- "figures"
+CSV_DIR    <- "data"
+dir.create(FIG_DIR, showWarnings = FALSE, recursive = TRUE)
+dir.create(CSV_DIR, showWarnings = FALSE, recursive = TRUE)
+
+N_PRIMARY    <- 200
+N_BOOT       <- 1000
+SEED         <- 42
+
+INSULTS      <- c("MIA","Hx","MIA+Hx")
+CONTRASTS    <- c(MIA      = "LPS-N_vs_Sal-N",
+                  Hx       = "Sal-Hx_vs_Sal-N",
+                  `MIA+Hx` = "LPS-Hx_vs_Sal-N")
+P11_FOLDERS  <- c(`Sal-Hx_vs_Sal-N` = "Mo_P11_SalHx_vs_SalN",
+                  `LPS-N_vs_Sal-N`  = "Mo_P11_LPSN_vs_SalN",
+                  `LPS-Hx_vs_Sal-N` = "Mo_P11_LPSHx_vs_SalN")
+HUMAN_FOLDER <- "Hu_Original_PC_vs_CC"
+HUMAN_CONTR  <- "PC_vs_CC"
+COL_UP       <- "#b40426"
+COL_DOWN     <- "#3b4cc0"
+
+# Path to the pre-built Panel-C dot plot in the analysis tree
+DOTPLOT_PATH <- file.path(
+  ROOT, "cross_species", "gprofiler_LPSHx_2026-05-20",
+  "figures", "dotplot_down.png")
+
+set.seed(SEED)
+```
+
+# 1. Overview
+
+This report assembles **Figure S1** for the manuscript: a three-panel cross-species summary of the **P11 MIA+Hx (dual-hit) insult-unique transcriptional signature** and how it relates to the human preterm-vs-term ranking.
+
+- **Panel A** — Heatmap of CAMERA pre-ranked enrichment of all six P11 insult-unique signatures (MIA / Hx / MIA+Hx × up / down) against the human PC-vs-CC ranking. Shows that the **MIA+Hx (dual-hit) signature is the only one to reach significance** (FDR = 0.0032 in both directions); MIA-only and Hx-only signatures are not significant (FDR = 0.071).
+- **Panel B** — Barcode plot of the MIA+Hx insult-unique signature projected onto the human Wald-statistic ranking, with `limma::barcodeplot` Enrichment / Weight panels. Provides the gene-level support for the Panel-A heatmap result.
+- **Panel C** — `gprofiler2::gost` over-representation of the down-regulated MIA+Hx insult-unique orthologs against curated pathway sources (GO BP and Reactome). Identifies the **biological programmes suppressed by the dual-hit insult** that are concordantly down-regulated in human preterm cerebellum.
+
+All three panel PNGs are written to `figures/`; the underlying CAMERA result is written to `data/`.
+
+# 2. Inputs
+
+```{r inputs}
+read_rank <- function(folder, contrast) {
+  d <- read.csv(file.path(PER_DIR, folder, "csv",
+                          sprintf("ranked_stat_%s.csv", contrast)),
+                stringsAsFactors = FALSE)
+  d$gene_id_stripped <- sub("\\..*$", "", d$gene_id)
+  d
+}
+M <- list()
+for (ins in INSULTS) {
+  contrast <- CONTRASTS[[ins]]
+  M[[ins]] <- read_rank(P11_FOLDERS[[contrast]], contrast)
+}
+H <- read_rank(HUMAN_FOLDER, HUMAN_CONTR)
+
+ortho <- read.csv(ORTHO_F, stringsAsFactors = FALSE) |>
+  filter(orthology_type == "ortholog_one2one") |>
+  distinct(mm_ensembl, hs_ensembl, .keep_all = TRUE)
+ortho$mm_stripped <- sub("\\..*$", "", ortho$mm_ensembl)
+ortho$hs_stripped <- sub("\\..*$", "", ortho$hs_ensembl)
+
+hs_stat <- H$stat; names(hs_stat) <- H$gene_id_stripped
+hs_stat <- hs_stat[!is.na(hs_stat)]
+```
+
+- 1:1 mouse↔human orthologs: **`r format(nrow(ortho), big.mark=",")`**
+- Human ranked genes (Hu_Original PC vs CC): **`r format(nrow(H), big.mark=",")`**
+
+# 3. Insult-unique signatures and CAMERA at N = `r N_PRIMARY`
+
+```{r insult_unique_camera}
+top_N_by_stat <- function(df, N) {
+  df |> arrange(desc(abs(stat))) |> slice_head(n = N) |>
+    mutate(direction = ifelse(stat > 0, "up", "down"))
+}
+insult_unique <- function(M, target, dir, N) {
+  tgt <- top_N_by_stat(M[[target]], N) |> filter(direction == dir)
+  others <- setdiff(INSULTS, target)
+  o1 <- top_N_by_stat(M[[others[1]]], N)$gene_id_stripped
+  o2 <- top_N_by_stat(M[[others[2]]], N)$gene_id_stripped
+  tgt |> filter(!(gene_id_stripped %in% o1) & !(gene_id_stripped %in% o2))
+}
+map_mouse_to_human <- function(mm) {
+  hs <- ortho$hs_stripped[ortho$mm_stripped %in% mm]
+  intersect(hs, names(hs_stat))
+}
+wilcox_auc <- function(stat, in_set) {
+  r <- rank(stat); n1 <- sum(in_set); n2 <- sum(!in_set)
+  if (n1 == 0 || n2 == 0) return(NA_real_)
+  (sum(r[in_set]) - n1 * (n1 + 1) / 2) / (n1 * n2)
+}
+boot_auc_ci <- function(stat, in_set, B = N_BOOT, seed = SEED) {
+  set.seed(seed); idx_in <- which(in_set)
+  if (length(idx_in) < 5) return(c(NA, NA, NA))
+  obs <- wilcox_auc(stat, in_set); n_total <- length(stat)
+  boots <- numeric(B)
+  for (i in seq_len(B)) {
+    v <- rep(FALSE, n_total); v[sample(idx_in, replace = TRUE)] <- TRUE
+    boots[i] <- wilcox_auc(stat, v)
+  }
+  c(AUC = obs,
+    lo = quantile(boots, 0.025, names = FALSE),
+    hi = quantile(boots, 0.975, names = FALSE))
+}
+
+cam_rows <- list()
+for (ins in INSULTS) for (dir in c("up","down")) {
+  iu <- insult_unique(M, ins, dir, N_PRIMARY)
+  hs_set <- map_mouse_to_human(iu$gene_id_stripped)
+  cam <- cameraPR(statistic = hs_stat,
+                   index = list(set = hs_set),
+                   use.ranks = FALSE, inter.gene.cor = 0.01)
+  ci <- boot_auc_ci(hs_stat, names(hs_stat) %in% hs_set)
+  cam_rows[[length(cam_rows)+1L]] <- data.frame(
+    Insult = ins, set_direction = dir,
+    n_mouse_unique = nrow(iu),
+    NGenes = cam$NGenes[1],
+    camera_dir = as.character(cam$Direction[1]),
+    PValue = cam$PValue[1],
+    AUC = unname(ci[1]),
+    AUC_lo = unname(ci[2]), AUC_hi = unname(ci[3]))
+}
+cam_tab <- do.call(rbind, cam_rows) |>
+  mutate(FDR = p.adjust(PValue, method = "BH"))
+write.csv(cam_tab, file.path(CSV_DIR, "CAMERA_P11_N200.csv"), row.names = FALSE)
+
+fmt_p <- function(x) ifelse(is.na(x), "n/a", formatC(x, format = "g", digits = 2))
+sig_star <- function(p) ifelse(is.na(p), "",
+                        ifelse(p < 0.001, "***",
+                        ifelse(p < 0.01,  "**",
+                        ifelse(p < 0.05,  "*", "ns"))))
+
+cam_tab |>
+  mutate(AUC_fmt = ifelse(is.na(AUC), "n/a",
+                          sprintf("%.2f (%.2f–%.2f)", AUC, AUC_lo, AUC_hi)),
+         FDR_fmt = fmt_p(FDR),
+         sig = sig_star(FDR)) |>
+  select(Insult, set_direction, n_mouse_unique, NGenes, camera_dir,
+          FDR = FDR_fmt, AUC_95CI = AUC_fmt, sig) |>
+  kable(caption = sprintf("CAMERA enrichment at N = %d. BH-FDR computed across the six signatures.", N_PRIMARY)) |>
+  kable_styling(full_width = FALSE, font_size = 11)
+```
+
+# 4. Panel A — CAMERA heatmap
+
+```{r panel_A_heatmap, fig.width=5.2, fig.height=4.8}
+plot_df <- cam_tab |>
+  mutate(signed = -log10(pmax(FDR, 1e-12)) *
+                  ifelse(is.na(camera_dir), 0,
+                         ifelse(camera_dir == "Up", 1, -1)),
+         star  = sig_star(FDR),
+         label = ifelse(is.na(FDR), "n/a",
+                        sprintf("%s\nFDR=%.2g\n%s", camera_dir, FDR, star)),
+         Insult = factor(Insult, levels = INSULTS),
+         set_direction = factor(set_direction, levels = c("up","down")))
+
+p_hm <- ggplot(plot_df, aes(set_direction, Insult, fill = signed)) +
+  geom_tile(colour = "white", linewidth = 1) +
+  geom_text(aes(label = label, colour = abs(signed) > 1.8),
+             size = 4.0, fontface = "plain", lineheight = 0.95) +
+  scale_fill_gradient2(low = "#3b4cc0", mid = "#f7f7f7", high = "#b40426",
+                        midpoint = 0, name = "Signed\n-log10(FDR)") +
+  scale_colour_manual(values = c(`TRUE` = "white", `FALSE` = "#1a1a1a"),
+                       guide = "none") +
+  labs(title    = "Enrichment in human preterm vs term",
+       subtitle = "Mouse P11 insult-unique signatures",
+       x = "Direction of mouse-unique set", y = NULL) +
+  theme_pub(15) +
+  theme(plot.title    = element_text(face = "plain", size = 16, colour = "#1a1a1a"),
+        plot.subtitle = element_text(face = "plain", size = 13),
+        axis.title    = element_text(face = "plain", size = 14),
+        axis.text     = element_text(face = "plain", size = 13),
+        strip.text    = element_text(face = "plain", size = 13),
+        legend.title  = element_text(face = "plain", size = 12),
+        legend.text   = element_text(face = "plain", size = 11))
+
+ggsave(file.path(FIG_DIR, "panelA_CAMERA_heatmap.png"),
+       p_hm, width = 5.2, height = 4.8, dpi = 240)
+p_hm
+```
+
+**How to read this.** Rows = insult (MIA, Hx, MIA+Hx); columns = direction of the mouse-unique set. Red = the mouse-unique set is enriched in the up-end of the human PC-vs-CC ranking; blue = enriched in the down-end. The MIA+Hx row (top) is the only one to reach significance (FDR = 0.0032, two-tailed concordant); the other four cells are not significant (FDR = 0.071), demonstrating that the cross-species enrichment is **insult-specific**, not a generic stress signature.
+
+# 5. Panel B — MIA+Hx barcode (limma `barcodeplot` with Weight bars)
+
+```{r panel_B_barcode}
+mia_hx_folder <- P11_FOLDERS[[CONTRASTS[["MIA+Hx"]]]]
+src <- read_rank(mia_hx_folder, CONTRASTS[["MIA+Hx"]])
+
+iu_up <- insult_unique(M, "MIA+Hx", "up",   N_PRIMARY)
+iu_dn <- insult_unique(M, "MIA+Hx", "down", N_PRIMARY)
+
+map_with_stat <- function(mm_df) {
+  mm_df$weight <- mm_df$stat
+  o <- ortho[ortho$mm_stripped %in% mm_df$gene_id_stripped, ]
+  o$weight <- mm_df$weight[match(o$mm_stripped, mm_df$gene_id_stripped)]
+  o <- o[o$hs_stripped %in% names(hs_stat), , drop = FALSE]
+  o[, c("hs_stripped", "weight")]
+}
+hs_up <- map_with_stat(iu_up)
+hs_dn <- map_with_stat(iu_dn)
+
+w <- numeric(length(hs_stat)); names(w) <- names(hs_stat)
+w[hs_up$hs_stripped] <- hs_up$weight
+w[hs_dn$hs_stripped] <- hs_dn$weight
+in_set <- (names(hs_stat) %in% hs_up$hs_stripped) |
+          (names(hs_stat) %in% hs_dn$hs_stripped)
+w_set <- w[in_set]
+
+out_panel_B <- file.path(FIG_DIR, "panelB_barcode_MIAandHx.png")
+# Wider canvas + bigger margins so the longer side labels
+# ("Down/Up in Human Preterm vs Term") render without crowding the central
+# barcode, and so axis tick labels don't collide with the y-axis title.
+png(out_panel_B, width = 12, height = 7, units = "in", res = 240)
+# Larger top margin so we can fit (a) the band-meaning mtext labels at
+# line ~0.4 and (b) the bumped-up title at line ~2.5 without collision.
+par(mar = c(7, 8, 6.5, 8) + 0.1,
+    cex.main = 1.55, font.main = 2,
+    cex.lab  = 1.45, cex.axis = 1.30,
+    mgp = c(3.8, 0.9, 0),
+    family = "Arial")   # publication-wide font
+limma::barcodeplot(
+  statistics    = hs_stat,
+  index         = in_set,
+  gene.weights  = w_set,
+  weights.label = "Weight",
+  labels        = c("Down in Human Preterm vs Term",
+                    "Up in Human Preterm vs Term"),
+  main          = "",         # suppressed; re-added via mtext below at higher line
+  quantiles     = quantile(hs_stat, c(0.25, 0.75)),
+  col.bars      = c(COL_UP, COL_DOWN)
+)
+# Title bumped up to make room for the quartile-band labels below it.
+mtext("P11 MIA+Hx insult-unique signature in human preterm ranking",
+      side = 3, line = 2.4, cex = 1.55, font = 2)
+
+# ---- Quartile-band labels (explain the blue / grey / pink shading) ----
+# Placed in the TOP FIGURE MARGIN (below the title, above the up enrichment
+# worm) — completely off the barcode plot itself. Color-matched to the bands
+# beneath so the reader can map each label to its quartile.
+# limma::barcodeplot uses GENE-RANK indices (1..N) as its internal x-axis,
+# so we anchor at index positions N*0.14, N*0.50, N*0.86 (centres of the
+# three shaded quartile bands).
+N_b <- length(hs_stat)
+mtext("↓ Bottom 25% (most down in PT)",
+      side = 3, line = 0.4, at = N_b * 0.14,
+      col = "#1e3a8a", cex = 1.05, font = 2)
+mtext("Middle 50%",
+      side = 3, line = 0.4, at = N_b * 0.50,
+      col = "grey25",  cex = 1.05, font = 2)
+mtext("↑ Top 25% (most up in PT)",
+      side = 3, line = 0.4, at = N_b * 0.86,
+      col = "#7f0d1a", cex = 1.05, font = 2)
+
+# Legend in top-left — the red up-worm peaks at top-right and the blue
+# down-worm peaks at bottom-left, so top-left is the cleanest empty quadrant.
+# Larger cex to match the bumped-up axis font.
+legend("topleft",
+        legend = c("Up in mouse MIA+Hx", "Down in mouse MIA+Hx"),
+        col    = c(COL_UP, COL_DOWN),
+        lty    = 1, lwd = 3.2, cex = 1.20, bty = "o", bg = "white",
+        inset = c(0.015, 0.015), seg.len = 2.2, y.intersp = 1.15)
+invisible(dev.off())
+```
+
+```{r panel_B_display, results='asis'}
+cat(sprintf("![](%s){width=95%%}\n\n", out_panel_B))
+```
+
+**How to read this.** Top red worm = local enrichment of the up-regulated MIA+Hx insult-unique orthologs along the human ranking; their Weight bars (mouse |Wald|) sit between the worm and the central barcode. Bottom blue worm and Weight bars do the same for the down-regulated insult-unique orthologs (note inverted axis). Central barcode: gene positions overlaid on the human ranking, with quartile-shaded background bands (left = lowest 25 % of human Wald, right = top 25 %). The up-set worm peaking at the right and the down-set worm peaking at the left is the gene-level evidence for the concordant Panel-A heatmap result.
+
+# 6. Panel C — Pathway dot plot (gprofiler, MIA+Hx down)
+
+The dot plot below is from the upstream `gprofiler_LPSHx_2026-05-20` analysis. The 77 down-regulated MIA+Hx insult-unique human orthologs were tested with `gprofiler2::gost` against GO BP / GO CC / GO MF / KEGG / REAC / WP / TF / MIRNA / HP / CORUM (background = 1:1-ortholog-mappable human genes in the Hu_Original ranking). Top 21 significant terms (BH-FDR < 0.05) from GO BP and Reactome are shown.
+
+```{r panel_C_display, results='asis'}
+target <- file.path(FIG_DIR, "panelC_dotplot_MIAandHx_down.png")
+if (!file.exists(target))
+  file.copy(DOTPLOT_PATH, target, overwrite = TRUE)
+cat(sprintf("![](%s){width=80%%}\n\n", target))
+```
+
+**How to read this.** Y-axis = pathway term name; x-axis = −log₁₀(BH-FDR adjusted p-value) — further right = more significant. Dot area = number of MIA+Hx down-set genes overlapping that term ("Overlap (genes)"). The top hit *"Neuronal System"* (Reactome) is the strongest concordantly suppressed pathway, accompanied by GO BP terms for negative regulation of signalling / cell communication, cerebellar granule cell differentiation and granular-layer formation — biologically coherent with cerebellar dysmaturation following the P11 dual-hit insult and concordant with the human preterm cerebellar signature.
+
+# 7. Figure S1 legend (publication length)
+
+> **Figure S1. Insult-specific cross-species enrichment of the P11 MIA+Hx (dual-hit) insult-unique signature in human preterm cerebellum.**
+> **(A)** CAMERA pre-ranked enrichment of the six P11 insult-unique gene sets (insult × direction; rows = MIA / Hx / MIA+Hx, columns = mouse-up / mouse-down) tested against the human preterm-vs-term Wald-statistic ranking (Hu_Original cohort). Tile colour = signed −log₁₀(BH-FDR); tile text = CAMERA direction, FDR and significance (`*` < 0.05; `**` < 0.01; `***` < 0.001; ns ≥ 0.05). Only the MIA+Hx row reaches significance (FDR = 3.2 × 10⁻³, both directions concordant).
+> **(B)** Barcode plot for the MIA+Hx insult-unique signature on the human ranking, sorted from most-down (left) to most-up (right) in preterm. Top red Enrichment worm and Weight bars: mouse-up MIA+Hx orthologs (n = 14). Bottom blue Enrichment worm and Weight bars: mouse-down MIA+Hx orthologs (n = 77). Background quartile shading: bottom (blue), middle 50 % (grey), top (pink) of the human ranking; dashed vertical lines at 25 % / 75 % quantiles. Up-set worm peaking at the right and down-set worm peaking at the left provides the gene-level support for Panel A. CAMERA FDR = 3.2 × 10⁻³, AUC_up = 0.77 (95 % CI 0.69–0.84), AUC_down = 0.42 (0.37–0.47).
+> **(C)** `gprofiler2::gost` over-representation of the 77 MIA+Hx-down insult-unique human orthologs against GO BP and Reactome (custom background = 1:1-ortholog-mappable human genes in the Hu_Original ranking). Top 21 BH-FDR-significant terms shown; dot size encodes the number of overlapping genes. Suppressed programmes are dominated by *Neuronal System* (Reactome), *negative regulation of signalling / cell communication*, and *cerebellar granule cell differentiation / granular-layer formation* — a biologically coherent signature of cerebellar dysmaturation that is concordantly down-regulated in human preterm cerebellum.
+
+# 8. Output files
+
+- `figures/panelA_CAMERA_heatmap.png` — Panel A, 5.2″ × 4.8″ @ 240 dpi
+- `figures/panelB_barcode_MIAandHx.png` — Panel B, 12″ × 7″ @ 240 dpi (legend in top-left; side labels read "Down / Up in Human Preterm vs Term")
+- `figures/panelC_dotplot_MIAandHx_down.png` — Panel C, copied from `analysis/Cross-species_DEG/.../gprofiler_LPSHx_2026-05-20/figures/dotplot_down.png`
+- `data/CAMERA_P11_N200.csv` — CAMERA result table (all six signatures)
+
+# 9. Session info
+
+```{r session}
+sessionInfo()
+```
