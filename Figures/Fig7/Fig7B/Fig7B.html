@@ -9161,7 +9161,7 @@ exclusions are applied.</p>
         <span class="nb">len</span><span class="p">(</span><span class="n">df</span><span class="p">),</span>
         <span class="nb">len</span><span class="p">(</span><span class="n">ex</span><span class="p">),</span>
         <span class="nb">int</span><span class="p">(</span><span class="n">ex</span><span class="p">[</span><span class="s2">"reason"</span><span class="p">]</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">contains</span><span class="p">(</span><span class="s2">"duplicate"</span><span class="p">,</span> <span class="n">case</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()),</span>
-        <span class="nb">int</span><span class="p">(</span><span class="n">ex</span><span class="p">[</span><span class="s2">"reason"</span><span class="p">]</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">contains</span><span class="p">(</span><span class="s2">"post-hoc removal"</span><span class="p">,</span> <span class="n">case</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()),</span>
+        <span class="nb">int</span><span class="p">(</span><span class="n">ex</span><span class="p">[</span><span class="s2">"reason"</span><span class="p">]</span><span class="o">.</span><span class="n">str</span><span class="o">.</span><span class="n">contains</span><span class="p">(</span><span class="s2">"pre-registered"</span><span class="p">,</span> <span class="n">case</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span><span class="o">.</span><span class="n">sum</span><span class="p">()),</span>
     <span class="p">],</span>
 <span class="p">})</span>
 <span class="n">display</span><span class="p">(</span><span class="n">prov</span><span class="o">.</span><span class="n">style</span><span class="o">.</span><span class="n">hide</span><span class="p">(</span><span class="n">axis</span><span class="o">=</span><span class="s2">"index"</span><span class="p">)</span><span class="o">.</span><span class="n">set_caption</span><span class="p">(</span><span class="s2">"Provenance counts."</span><span class="p">))</span>
@@ -9230,42 +9230,42 @@ exclusions are applied.</p>
 <tr>
 <td class="data row0 col0" id="T_123f7_row0_col0">Sal-Hx</td>
 <td class="data row0 col1" id="T_123f7_row0_col1">test2021-11-08T12_29_52</td>
-<td class="data row0 col2" id="T_123f7_row0_col2">duplicate video already in Aaron cohort (dedup)</td>
+<td class="data row0 col2" id="T_123f7_row0_col2">duplicate video already in another cohort (dedup)</td>
 </tr>
 <tr>
 <td class="data row1 col0" id="T_123f7_row1_col0">Sal-Hx</td>
 <td class="data row1 col1" id="T_123f7_row1_col1">test2021-11-08T13_08_11</td>
-<td class="data row1 col2" id="T_123f7_row1_col2">duplicate video already in Aaron cohort (dedup)</td>
+<td class="data row1 col2" id="T_123f7_row1_col2">duplicate video already in another cohort (dedup)</td>
 </tr>
 <tr>
 <td class="data row2 col0" id="T_123f7_row2_col0">Sal-Hx</td>
 <td class="data row2 col1" id="T_123f7_row2_col1">test2021-11-24T13_28_05</td>
-<td class="data row2 col2" id="T_123f7_row2_col2">duplicate video already in Aaron cohort (dedup)</td>
+<td class="data row2 col2" id="T_123f7_row2_col2">duplicate video already in another cohort (dedup)</td>
 </tr>
 <tr>
 <td class="data row3 col0" id="T_123f7_row3_col0">Sal-Hx</td>
 <td class="data row3 col1" id="T_123f7_row3_col1">test2021-11-24T14_03_46</td>
-<td class="data row3 col2" id="T_123f7_row3_col2">duplicate video already in Aaron cohort (dedup)</td>
+<td class="data row3 col2" id="T_123f7_row3_col2">duplicate video already in another cohort (dedup)</td>
 </tr>
 <tr>
 <td class="data row4 col0" id="T_123f7_row4_col0">Sal-Hx</td>
 <td class="data row4 col1" id="T_123f7_row4_col1">test2021-11-05T15_56_07</td>
-<td class="data row4 col2" id="T_123f7_row4_col2">duplicate video already in Aaron cohort (dedup)</td>
+<td class="data row4 col2" id="T_123f7_row4_col2">duplicate video already in another cohort (dedup)</td>
 </tr>
 <tr>
 <td class="data row5 col0" id="T_123f7_row5_col0">Sal-N</td>
 <td class="data row5 col1" id="T_123f7_row5_col1">Test2022-03-14T14_16_43</td>
-<td class="data row5 col2" id="T_123f7_row5_col2">Gabriele post-hoc removal (1 tracking artifact + 2 low-quality/low-social)</td>
+<td class="data row5 col2" id="T_123f7_row5_col2">Pre-registered exclusion (1 tracking artifact + 2 low-quality/low-social)</td>
 </tr>
 <tr>
 <td class="data row6 col0" id="T_123f7_row6_col0">Sal-N</td>
 <td class="data row6 col1" id="T_123f7_row6_col1">Test2022-03-15T12_46_23</td>
-<td class="data row6 col2" id="T_123f7_row6_col2">Gabriele post-hoc removal (1 tracking artifact + 2 low-quality/low-social)</td>
+<td class="data row6 col2" id="T_123f7_row6_col2">Pre-registered exclusion (1 tracking artifact + 2 low-quality/low-social)</td>
 </tr>
 <tr>
 <td class="data row7 col0" id="T_123f7_row7_col0">Sal-N</td>
 <td class="data row7 col1" id="T_123f7_row7_col1">Test2022-03-14T13_41_12</td>
-<td class="data row7 col2" id="T_123f7_row7_col2">Gabriele post-hoc removal (1 tracking artifact + 2 low-quality/low-social)</td>
+<td class="data row7 col2" id="T_123f7_row7_col2">Pre-registered exclusion (1 tracking artifact + 2 low-quality/low-social)</td>
 </tr>
 </tbody>
 </table>
