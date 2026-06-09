@@ -13,16 +13,6 @@ Code and analysis notebooks for **"MIA-Induced Metabolic Priming Increases Vulne
 
 Each figure-panel folder contains the analysis source (`.Rmd` for R, `.ipynb` for Python) alongside its rendered `.html`, which shows the code, output, and final panel inline.
 
-## Data availability
-
-Raw and processed data are **not** included in this repository. Analysis scripts read
-from a local `data/` directory that is not distributed; the committed `.html` outputs
-embed all intermediate results and the final figures so the analysis is fully reviewable
-without the underlying data. Spatial transcriptomics data analysed in this study were
-retrieved from the NoCodeSeg repository. Additional data are available from the
-corresponding author on reasonable request (see the manuscript's *Data availability*
-statement).
-
 ## Citation
 
 If you use this code, please cite the manuscript (citation details to follow).
