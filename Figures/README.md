@@ -1,7 +1,7 @@
 # Figures — Source Code
 
 Code used to generate each main and supplementary figure panel in
-*"MIA-Induced Metabolic Priming Increases Vulnerability to Neonatal Hypoxia"*.
+*"Prematurity insults remodel cerebellar development and behavior"*.
 
 Each panel folder contains the analysis/plotting script and its rendered output:
 

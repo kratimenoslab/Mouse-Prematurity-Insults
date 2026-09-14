@@ -1,6 +1,6 @@
 # Mouse-Prematurity-Insults
 
-Code and analysis notebooks for **"MIA-Induced Metabolic Priming Increases Vulnerability to Neonatal Hypoxia"**. Mouse cerebellar phenotyping across maternal immune activation (MIA), neonatal hypoxia (Hx), and sequential insults at P11 and P45 — bioenergetics, ultrastructural and synaptic morphometry, spatial transcriptomics, and behavior.
+Code and analysis notebooks for **"Prematurity insults remodel cerebellar development and behavior"**. Mouse cerebellar phenotyping across maternal immune activation (MIA), neonatal hypoxia (Hx), and sequential insults at P11 and P45 — bioenergetics, ultrastructural and synaptic morphometry, spatial transcriptomics, and behavior.
 
 ## Repository structure
 
@@ -15,4 +15,6 @@ Each figure-panel folder contains the analysis source (`.Rmd` for R, `.ipynb` fo
 
 ## Citation
 
-If you use this code, please cite the manuscript (citation details to follow).
+If you use this code, please cite:
+
+Sanidas G*, Simonti G*, Ghaemmaghami J, Woyshner K, Vidva R, Bittel D, Wolff N, Triantafyllou M, Polyviou A, Byrd C, Lowe C, Salisbury H, Goldstein E, Sathyanesan A, Koutroulis I, Stein-O'Brien G, Sidiropoulos DN, Gallo V, Kratimenos P. Prematurity insults remodel cerebellar development and behavior. *Brain*. 2026 (in press). (*equal contribution)
